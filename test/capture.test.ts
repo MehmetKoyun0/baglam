@@ -89,6 +89,15 @@ describe("auto-capture: requests", () => {
     expect(r.every((x) => x.length <= 300)).toBe(true);
   });
 
+  it("keeps revised instructions under the same heading and coalesces only the repeat", () => {
+    const { cap, live } = setup();
+    for (const text of ["Plan\nFirst version", "Plan\nRevised version", "Plan\nRevised version", "Plan"]) {
+      cap("cursor", { kind: "prompt", text });
+    }
+    expect(live()?.requests).toEqual(["Plan", "Plan", "Plan"]);
+    expect(live()?.request).toBe("Plan\nRevised version");
+  });
+
   it("an empty prompt does nothing", () => {
     const { cap, live } = setup();
     expect(cap("claude-code", { kind: "prompt", text: "   \n " })).toBeUndefined();

@@ -46,21 +46,23 @@ export interface BaglamExport {
 
 /** Every record (all statuses) and its history, for one project or all of them. */
 export function exportJson(store: ContextStore, opts: { project?: string } = {}): BaglamExport {
-  const projects = store
-    .listProjects({ includeArchived: true })
-    .filter((p) => !opts.project || p.key === opts.project)
-    .map((p) => ({ key: p.key, name: p.name }));
-  const entries = projects.flatMap((p) => allOf(store, { project: p.key }));
-  entries.sort((a, b) => a.createdAt - b.createdAt);
-  const events = store.eventsOf(entries.map((e) => e.id)).map(({ project: _p, ...ev }) => ev);
-  const keys = projects.map((p) => p.key);
-  const handoffs = store.listHandoffs().filter((h) => keys.includes(h.project));
-  const settings = keys.flatMap((project) => {
-    const s = store.projectSettings(project);
-    if (!s.autonomous && s.autoCapture) return [];
-    return [{ project, autonomous: s.autonomous, ...(s.autoCapture ? {} : { autoCapture: false }) }];
+  return store.readSnapshot(() => {
+    const projects = store
+      .listProjects({ includeArchived: true })
+      .filter((p) => !opts.project || p.key === opts.project)
+      .map((p) => ({ key: p.key, name: p.name }));
+    const entries = projects.flatMap((p) => allOf(store, { project: p.key }));
+    entries.sort((a, b) => a.createdAt - b.createdAt);
+    const events = store.eventsOf(entries.map((e) => e.id)).map(({ project: _p, ...ev }) => ev);
+    const keys = projects.map((p) => p.key);
+    const handoffs = store.listHandoffs().filter((h) => keys.includes(h.project));
+    const settings = keys.flatMap((project) => {
+      const s = store.projectSettings(project);
+      if (!s.autonomous && s.autoCapture) return [];
+      return [{ project, autonomous: s.autonomous, ...(s.autoCapture ? {} : { autoCapture: false }) }];
+    });
+    return { format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), projects, entries, events, handoffs, settings };
   });
-  return { format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), projects, entries, events, handoffs, settings };
 }
 
 const KIND_ORDER: Kind[] = ["warning", "decision", "convention", "preference", "fact"];
@@ -109,6 +111,7 @@ export interface ImportResult {
   /** Projects that had autonomous mode on in the file; an import never turns it on by itself. */
   autonomousInFile: string[];
   skipped: number;
+  failures: { id: string; reason: string }[];
   blocked: { id: string; findings: SecretFinding[] }[];
 }
 
@@ -124,13 +127,20 @@ function toEntry(raw: unknown): Entry | null {
   const status = s("status"), sourceAgent = s("sourceAgent"), createdAt = n("createdAt");
   if (!id || !/^c[a-z0-9]{4,20}$/.test(id) || !project || !title || !body || !status || !sourceAgent || createdAt === null) return null;
   if (!KINDS.includes(kind as Kind)) return null;
+  const reviewState = raw.reviewState ?? null;
+  if (reviewState !== null && (
+    (reviewState !== "unreviewed" && reviewState !== "kept") || raw.autoApproved !== true ||
+    !["approved", "retired", "superseded"].includes(status)
+  )) return null;
+  if ("audience" in raw && (!Array.isArray(raw.audience) ||
+      !raw.audience.every((value) => typeof value === "string" && value.trim().length > 0))) return null;
   const audience = list("audience");
   return {
     id, project, kind: kind as Kind, title, body, rationale: s("rationale"), tags: list("tags"),
     audience: audience.length ? audience : ["*"], status: status as Entry["status"], sourceAgent, createdAt,
     decidedAt: n("decidedAt"), decidedBy: s("decidedBy"), decisionNote: s("decisionNote"), expiresAt: n("expiresAt"),
     supersedes: s("supersedes"), supersededBy: s("supersededBy"), editedAt: n("editedAt"),
-    autoApproved: raw.autoApproved === true, similarTo: list("similarTo"), reviewState: null,
+    autoApproved: raw.autoApproved === true, similarTo: list("similarTo"), reviewState,
   };
 }
 
@@ -143,17 +153,33 @@ export function importJson(
   if (!isObj(data) || data.format !== EXPORT_FORMAT || !Array.isArray(data.entries)) {
     throw new Error(`not a Bağlam export (expected "format": "${EXPORT_FORMAT}")`);
   }
-  const events = Array.isArray(data.events) ? data.events.filter(isObj) : [];
-  const result: ImportResult = { imported: 0, approvedNow: 0, skipped: 0, blocked: [], handoffs: 0, autonomousInFile: [] };
+  const historyById = new Map<string, ExportedEvent[]>();
+  for (const ev of Array.isArray(data.events) ? data.events : []) {
+    if (!isObj(ev)) continue;
+    const { entryId, type, actor, at, detail } = ev;
+    if (typeof entryId !== "string" || !EVENT_TYPES.includes(type as EventType) ||
+        typeof actor !== "string" || typeof at !== "number") continue;
+    const history = historyById.get(entryId) ?? [];
+    history.push({ entryId, type: type as EventType, actor, at, detail: typeof detail === "string" ? detail : null });
+    historyById.set(entryId, history);
+  }
+  const result: ImportResult = { imported: 0, approvedNow: 0, skipped: 0, failures: [], blocked: [], handoffs: 0, autonomousInFile: [] };
   if (Array.isArray(data.projects)) {
     for (const p of data.projects.filter(isObj)) {
       if (typeof p.key === "string" && typeof p.name === "string") store.ensureProject(p.key, p.name);
     }
   }
-  for (const raw of data.entries) {
-    const e = toEntry(raw);
+  const entries = data.entries.map(toEntry);
+  // Links can point forward in the export. Existing records win when an id is already present.
+  const projectsById = new Map<string, string>();
+  for (const e of entries) {
+    if (e && !projectsById.has(e.id)) projectsById.set(e.id, e.project);
+  }
+  for (const [index, e] of entries.entries()) {
     if (!e) {
-      result.skipped++;
+      const raw = data.entries[index];
+      const id = isObj(raw) && typeof raw.id === "string" ? raw.id : "entries[" + index + "]";
+      result.failures.push({ id, reason: "invalid record fields" });
       continue;
     }
     const findings = scanEntryFields(e);
@@ -161,23 +187,22 @@ export function importJson(
       result.blocked.push({ id: e.id, findings });
       continue;
     }
-    const history = events
-      .filter(
-        (ev) =>
-          ev.entryId === e.id && EVENT_TYPES.includes(ev.type as EventType) && typeof ev.actor === "string" && typeof ev.at === "number",
-      )
-      .map((ev) => ({ type: ev.type as EventType, actor: ev.actor as string, at: ev.at as number, detail: typeof ev.detail === "string" ? ev.detail : null }));
+    const history = historyById.get(e.id) ?? [];
     try {
-      if (store.importEntry(e, history, { actor: opts.by, detail: opts.source ?? null })) {
+      if (store.importEntry(e, history, { actor: opts.by, detail: opts.source ?? null }, projectsById)) {
         result.imported++;
         if (e.status === "approved") result.approvedNow++;
       } else result.skipped++;
-    } catch {
-      result.skipped++;
+    } catch (err) {
+      result.failures.push({ id: e.id, reason: err instanceof Error ? err.message : String(err) });
     }
   }
-  for (const raw of Array.isArray(data.handoffs) ? data.handoffs.filter(isObj) : []) {
-    if (typeof raw.project !== "string" || typeof raw.branch !== "string" || typeof raw.goal !== "string") continue;
+  const handoffs = Array.isArray(data.handoffs) ? data.handoffs : [];
+  for (const [index, raw] of handoffs.entries()) {
+    if (!isObj(raw) || typeof raw.project !== "string" || typeof raw.branch !== "string" || typeof raw.goal !== "string") {
+      result.failures.push({ id: "handoffs[" + index + "]", reason: "invalid handoff fields" });
+      continue;
+    }
     if (store.getHandoff(raw.project, raw.branch)) continue; // never replace work in progress here
     const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined);
     const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -201,8 +226,8 @@ export function importJson(
         newTask: true,
       });
       result.handoffs++;
-    } catch {
-      /* secrets or invalid fields: not imported */
+    } catch (err) {
+      result.failures.push({ id: raw.project + "/" + raw.branch, reason: err instanceof Error ? err.message : String(err) });
     }
   }
   if (Array.isArray(data.settings)) {

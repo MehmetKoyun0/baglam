@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/preact";
+import { act, render, screen, fireEvent, waitFor, cleanup } from "@testing-library/preact";
 import { dict, historyLabel, pickLanguage, translator, I18nProvider } from "../ui/src/i18n.js";
+import { Records } from "../ui/src/screens/Records.js";
 import { EntryCard } from "../ui/src/components/EntryCard.js";
 import { Inbox } from "../ui/src/screens/Inbox.js";
 import { ApiError, type Api } from "../ui/src/api.js";
@@ -65,6 +66,40 @@ describe("EntryCard", () => {
     expect(container.querySelector("b")).toBeNull();
     expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
     expect(container.textContent).toContain("<b>bold?</b>");
+  });
+});
+
+describe("Records", () => {
+  it("ignores obsolete list and history responses after a selection changes", async () => {
+    const obsolete = entry();
+    const rows = [entry(), entry()];
+    const oldList = Promise.withResolvers<Awaited<ReturnType<Api["records"]>>>();
+    const oldDetail = Promise.withResolvers<Awaited<ReturnType<Api["entry"]>>>();
+    const event = (actor: string) => ({ type: "approved", actor, at: Date.now(), detail: null });
+    const records = vi.fn<Api["records"]>().mockReturnValueOnce(oldList.promise)
+      .mockResolvedValue({ items: rows, total: rows.length });
+    const detail = vi.fn<Api["entry"]>().mockReturnValueOnce(oldDetail.promise)
+      .mockResolvedValue({ entry: rows[1], history: [event("current reviewer")] });
+    const api = fakeApi([], { records, entry: detail });
+    const view = (project: string) => <I18nProvider lang="en">
+      <Records api={api} project={project} refresh={0} onChanged={() => {}} />
+    </I18nProvider>;
+    const panel = render(view("old"));
+    await waitFor(() => expect(records).toHaveBeenCalledTimes(1));
+    panel.rerender(view("new"));
+    await screen.findByText(rows[0].title);
+    await act(async () => { oldList.resolve({ items: [obsolete], total: 1 }); await oldList.promise; });
+    expect(screen.queryByText(obsolete.title)).toBeNull();
+    const buttons = screen.getAllByRole("button", { name: /details/i });
+    fireEvent.click(buttons[0]);
+    fireEvent.click(buttons[1]);
+    await screen.findByText("current reviewer");
+    await act(async () => {
+      oldDetail.resolve({ entry: rows[0], history: [event("old reviewer")] });
+      await oldDetail.promise;
+    });
+    expect(screen.queryByText("old reviewer")).toBeNull();
+    expect(screen.getByText("current reviewer")).toBeTruthy();
   });
 });
 

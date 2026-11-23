@@ -84,7 +84,7 @@ function load(file: string) {
 
 function save(file: string, text: string): void {
   backupOnce(file);
-  writeFileAtomic(file, text);
+  writeFileAtomic(file, text, 0o600);
 }
 
 export const codex: ClientAdapter = {

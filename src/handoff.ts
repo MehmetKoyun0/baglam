@@ -28,6 +28,7 @@ export interface Handoff {
   requests: string[];
   /** The user's latest detailed (multi-line) request in full (automatic saving only; null when none). */
   request: string | null;
+  lastRequestDetailed?: boolean;
   /** Last checkpoint the agent made itself; null when only the tool's hooks saved this task. */
   agentAt: number | null;
   /** Last automatic save from a tool hook. */
@@ -154,6 +155,7 @@ const payload = (h: Handoff) =>
   JSON.stringify({
     goal: h.goal, status: h.status, done: h.done, now: h.now, next: h.next, files: h.files, blockers: h.blockers, notes: h.notes,
     agentVerified: h.agentVerified, requests: h.requests, request: h.request, agentAt: h.agentAt, autoAt: h.autoAt, requestAt: h.requestAt,
+    lastRequestDetailed: h.lastRequestDetailed,
   });
 
 /** The task's detailed request is the carried (latest) request, not an older one. */
@@ -290,6 +292,7 @@ export class HandoffRepo {
       notes: i.notes ?? base.notes,
       requests: i.requests ?? base.requests,
       request: i.request ?? base.request,
+      lastRequestDetailed: i.isRequest ? i.request !== undefined : base.lastRequestDetailed,
       agentAt: i.origin === "auto" ? base.agentAt : now,
       autoAt: i.origin === "auto" ? now : base.autoAt,
       requestAt: i.isRequest ? now : base.requestAt,

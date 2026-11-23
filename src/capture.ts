@@ -45,12 +45,15 @@ export function planAutoEvent(
     // A detailed (multi-line) request is kept whole: a plan in it must reach the next agent even when
     // the notes are vague. The latest detailed one wins; a one-liner ("devam et") keeps it.
     const full = String(event.text ?? "").trim();
-    const request = full !== first ? keep(full, LIMITS.request) : undefined;
+    const request = full !== first || full.length > LIMITS.goal ? keep(full, LIMITS.request) : undefined;
     const stale = live && ctx.now - live.updatedAt > STALE_TASK_MS;
     if (!live || stale) return { goal: line, requests: [line], request, newTask: stale ? true : undefined, isRequest: true };
     // Some tools fire the prompt hook twice for one message (and Cursor also runs Claude Code's hooks):
     // the same words again within a minute are that one message; later they are a new request.
-    if (live.requests.at(-1) === line && live.requestAt !== null && ctx.now - live.requestAt < DUPLICATE_MS) return null;
+    const sameRequest = request === undefined
+      ? live.lastRequestDetailed === false
+      : live.lastRequestDetailed === true && live.request === request && full.length <= LIMITS.request;
+    if (sameRequest && live.requests.at(-1) === line && live.requestAt !== null && ctx.now - live.requestAt < DUPLICATE_MS) return null;
     return { requests: [...live.requests, line].slice(-LIMITS.requests), request, isRequest: true };
   }
 

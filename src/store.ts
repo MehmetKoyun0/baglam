@@ -106,12 +106,13 @@ const DAY_MS = 86_400_000;
 const ID_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
 /** SQL fragment: entry `e` is visible to the agent bound at `:agent`, at time `:now`. */
-const VISIBLE = `
+const ACCESSIBLE = `
   e.project = :project
-  AND e.status = 'approved'
   AND (e.expires_at IS NULL OR e.expires_at > :now)
   AND (e.audience = '["*"]' OR EXISTS (SELECT 1 FROM json_each(e.audience) WHERE value IN ('*', :agent)))
 `;
+
+const VISIBLE = ACCESSIBLE + " AND e.status = 'approved'";
 
 type Row = Record<string, SQLInputValue>;
 
@@ -242,11 +243,21 @@ export class ContextStore {
     return r ? toEntry(r) : undefined;
   }
 
+  getForAgent(id: string, project: string, agent: string): Entry | undefined {
+    const row = this.db.prepare(
+      "SELECT e.* FROM entries e WHERE " + ACCESSIBLE +
+      " AND e.id = :id AND e.status IN ('approved', 'retired', 'superseded')",
+    ).get({ id, project, agent, now: this.clock() }) as Row | undefined;
+    return row ? toEntry(row) : undefined;
+  }
+
   approve(id: string, by: string, note?: string, opts: { auto?: boolean; review?: boolean } = {}): Entry {
-    const e = this.mustBePending(id);
     const now = this.clock();
-    this.transaction(() => this.approveRow(e, by, note, opts.auto ?? false, now, opts.review ?? false));
-    return this.get(id)!;
+    return this.transaction(() => {
+      const e = this.mustBePending(id);
+      this.approveRow(e, by, note, opts.auto ?? false, now, opts.review ?? false);
+      return this.get(id)!;
+    });
   }
 
   /** Approve the listed proposals that are still pending, all in one transaction; others are skipped. */
@@ -266,6 +277,12 @@ export class ContextStore {
     return { approved, skipped };
   }
 
+  private checkReplacementTarget(project: string, id: string): void {
+    const target = this.get(id);
+    if (!target) throw new Error(`supersedes: unknown entry ${id}`);
+    if (target.project !== project) throw new Error("supersedes: entry belongs to a different project");
+  }
+
   /** Inside a transaction. The status guard in the UPDATE makes a concurrent decision lose cleanly. */
   private approveRow(e: Entry, by: string, note: string | undefined, auto: boolean, now: number, review = false): void {
     const res = this.db
@@ -276,9 +293,10 @@ export class ContextStore {
     if (!Number(res.changes)) this.notPending(e.id);
     this.event(e.id, e.project, "approved", by, note ?? null);
     if (e.supersedes) {
+      this.checkReplacementTarget(e.project, e.supersedes);
       const sup = this.db
-        .prepare("UPDATE entries SET status='superseded', superseded_by=? WHERE id=? AND status='approved'")
-        .run(e.id, e.supersedes);
+        .prepare("UPDATE entries SET status='superseded', superseded_by=? WHERE id=? AND project=? AND status='approved'")
+        .run(e.id, e.supersedes, e.project);
       if (Number(sup.changes) > 0) this.event(e.supersedes, e.project, "superseded", by, e.id);
     }
   }
@@ -377,24 +395,33 @@ export class ContextStore {
     e: Entry,
     events: { type: EventType; actor: string; at: number; detail: string | null }[],
     importedBy?: { actor: string; detail: string | null },
+    projectsById?: ReadonlyMap<string, string>,
   ): boolean {
     if (this.get(e.id)) return false;
     const v = validate(e);
     const STATUSES: Status[] = ["proposed", "approved", "rejected", "superseded", "retired"];
     if (!STATUSES.includes(e.status)) throw new Error(`unknown status ${e.status}`);
+    const project = requireText(e.project, "project", 1000);
     this.transaction(() => {
+      for (const id of [e.supersedes, e.supersededBy]) {
+        if (!id) continue;
+        const linkedProject = this.get(id)?.project ?? projectsById?.get(id);
+        if (linkedProject !== undefined && linkedProject !== project) throw new Error("replacement belongs to a different project");
+        if (linkedProject === undefined && e.status === "proposed" && id === e.supersedes) throw new Error("unknown replacement target");
+      }
       this.db
         .prepare(
           `INSERT INTO entries (id, project, kind, title, body, rationale, tags, audience, status, source_agent,
              created_at, decided_at, decided_by, decision_note, expires_at, supersedes, superseded_by,
-             edited_at, auto_approved, similar_to)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             edited_at, auto_approved, similar_to, review_state)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
-          e.id, requireText(e.project, "project", 1000), v.kind, v.title, v.body, v.rationale, v.tags, v.audience,
+          e.id, project, v.kind, v.title, v.body, v.rationale, v.tags, v.audience,
           e.status, requireText(e.sourceAgent, "sourceAgent", 100), e.createdAt, e.decidedAt ?? null,
           e.decidedBy ?? null, e.decisionNote ?? null, e.expiresAt ?? null, e.supersedes ?? null,
           e.supersededBy ?? null, e.editedAt ?? null, e.autoApproved ? 1 : 0, JSON.stringify(cleanList(e.similarTo)),
+          e.reviewState ?? null,
         );
       for (const ev of events) {
         this.db
@@ -842,15 +869,15 @@ export class ContextStore {
    * a record it replaced comes back only if nothing changed it since.
    */
   undoAuto(id: string, by: string): { undone: Entry; restored?: Entry; note?: string } {
-    const e = this.get(id);
-    if (!e) throw new Error(`unknown entry ${id}`);
-    if (!e.autoApproved || !e.reviewState) throw new Error(`entry ${id} was not shared automatically; retire it instead`);
-    if (e.status === "superseded" && e.supersededBy) throw new Error(`entry ${id} was already replaced; undo ${e.supersededBy} first`);
-    if (e.status !== "approved") throw new Error(`entry ${id} is not active (status: ${e.status})`);
-    const note = "undone after automatic sharing";
-    let restored: Entry | undefined;
-    let message: string | undefined;
-    this.transaction(() => {
+    return this.transaction(() => {
+      const e = this.get(id);
+      if (!e) throw new Error(`unknown entry ${id}`);
+      if (!e.autoApproved || !e.reviewState) throw new Error(`entry ${id} was not shared automatically; retire it instead`);
+      if (e.status === "superseded" && e.supersededBy) throw new Error(`entry ${id} was already replaced; undo ${e.supersededBy} first`);
+      if (e.status !== "approved") throw new Error(`entry ${id} is not active (status: ${e.status})`);
+      const note = "undone after automatic sharing";
+      let restored: Entry | undefined;
+      let message: string | undefined;
       const res = this.db
         .prepare(
           "UPDATE entries SET status = 'rejected', decided_at = ?, decided_by = ?, decision_note = ?, review_state = NULL WHERE id = ? AND status = 'approved'",
@@ -860,17 +887,17 @@ export class ContextStore {
       this.event(id, e.project, "rejected", by, note);
       if (e.supersedes) {
         const back = this.db
-          .prepare("UPDATE entries SET status = 'approved', superseded_by = NULL WHERE id = ? AND status = 'superseded' AND superseded_by = ?")
-          .run(e.supersedes, id);
+          .prepare("UPDATE entries SET status = 'approved', superseded_by = NULL WHERE id = ? AND project = ? AND status = 'superseded' AND superseded_by = ?")
+          .run(e.supersedes, e.project, id);
         if (Number(back.changes)) {
+          restored = this.get(e.supersedes);
           this.event(e.supersedes, e.project, "restored", by, `undo of ${id}`);
         } else {
           message = `${e.supersedes} was not restored because it changed since it was replaced`;
         }
       }
+      return { undone: this.get(id)!, ...(restored ? { restored } : {}), ...(message ? { note: message } : {}) };
     });
-    if (e.supersedes && !message) restored = this.get(e.supersedes);
-    return { undone: this.get(id)!, ...(restored ? { restored } : {}), ...(message ? { note: message } : {}) };
   }
 
   /** Like findSimilar, but among records the owner already rejected or replaced. */
@@ -960,11 +987,7 @@ export class ContextStore {
     const project = requireText(input.project, "project", 1000);
     const v = validate(input);
     if (input.ttlDays !== undefined && !(input.ttlDays > 0)) throw new Error("ttlDays must be positive");
-    if (input.supersedes) {
-      const target = this.get(input.supersedes);
-      if (!target) throw new Error(`supersedes: unknown entry ${input.supersedes}`);
-      if (target.project !== project) throw new Error("supersedes: entry belongs to a different project");
-    }
+    if (input.supersedes) this.checkReplacementTarget(project, input.supersedes);
     const now = this.clock();
     const id = newId();
     this.transaction(() => {
@@ -999,11 +1022,16 @@ export class ContextStore {
     return e;
   }
 
-  private transaction(fn: () => void): void {
-    this.db.exec("BEGIN IMMEDIATE");
+  readSnapshot<T>(read: () => T): T {
+    return this.transaction(read, "BEGIN");
+  }
+
+  private transaction<T>(fn: () => T, begin = "BEGIN IMMEDIATE"): T {
+    this.db.exec(begin);
     try {
-      fn();
+      const value = fn();
       this.db.exec("COMMIT");
+      return value;
     } catch (err) {
       this.db.exec("ROLLBACK");
       throw err;

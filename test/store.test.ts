@@ -70,6 +70,29 @@ describe("ContextStore", () => {
     expect(retired.supersededBy).toBe(next.id);
   });
 
+  it("approves a replacement after the project is rekeyed before the write transaction", () => {
+    const project = "c:/work/moved";
+    let beforeApproval: (() => void) | undefined;
+    const db = new ContextStore(":memory:", () => {
+      const callback = beforeApproval;
+      beforeApproval = undefined;
+      callback?.();
+      return now;
+    });
+    try {
+      const original = db.addApproved({ project: P, kind: "fact", title: "Original", body: "Old" }, "human");
+      const replacement = db.propose({
+        project: P, kind: "fact", title: "Replacement", body: "New", sourceAgent: "codex", supersedes: original.id,
+      });
+      beforeApproval = () => db.rekeyProject(P, project);
+      expect(db.approve(replacement.id, "human")).toMatchObject({ project, status: "approved" });
+      expect(db.get(original.id)).toMatchObject({ project, status: "superseded", supersededBy: replacement.id });
+      expect(db.eventsOf([original.id, replacement.id]).every((event) => event.project === project)).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
   it("rejects supersedes pointing at another project or unknown id", () => {
     expect(() => propose({ supersedes: "nope" })).toThrow(/unknown/i);
     const other = propose({ project: "c:/x" });

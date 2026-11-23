@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, statSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { testHost } from "./helpers.js";
 import { serverEntry } from "../src/host.js";
@@ -21,6 +21,20 @@ describe("JSON client adapters", () => {
     const cfg = readJson(file);
     expect(cfg.mcpServers.other).toEqual({ command: "x" });
     expect(cfg.mcpServers.baglam).toEqual(serverEntry(host, "cursor"));
+  });
+
+  it.skipIf(process.platform === "win32")("preserves POSIX permissions across install and uninstall", () => {
+    const host = testHost();
+    const file = join(host.home, ".cursor", "mcp.json");
+    cursor.install(host);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    for (const mode of [0o600, 0o640]) {
+      chmodSync(file, mode);
+      cursor.uninstall(host);
+      expect(statSync(file).mode & 0o777).toBe(mode);
+      cursor.install(host);
+      expect(statSync(file).mode & 0o777).toBe(mode);
+    }
   });
 
   it("creates a missing config file", () => {

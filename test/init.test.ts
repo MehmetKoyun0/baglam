@@ -177,6 +177,19 @@ describe("baglam init", () => {
     expect(store.projectInfo(first.project.key)?.name).toBe("Payments Core");
   });
 
+  it("--local computes patterns relative to the linked worktree and writes the common exclude", () => {
+    const common = join(dir, "main", ".git");
+    const metadata = join(common, "worktrees", "feature");
+    const feature = join(dir, "feature");
+    mkdirSync(metadata, { recursive: true });
+    mkdirSync(feature);
+    writeFileSync(join(feature, ".git"), "gitdir: ../main/.git/worktrees/feature\n");
+    writeFileSync(join(metadata, "commondir"), "../..\n");
+    runInit(feature, { store, host, local: true });
+    const exclude = readFileSync(join(common, "info", "exclude"), "utf8").split(/\r?\n/);
+    expect(exclude).toEqual(expect.arrayContaining([".baglam/", "AGENTS.md"]));
+  });
+
   it("--local excludes Bağlam files via .git/info/exclude without touching .gitignore", () => {
     mkdirSync(join(dir, ".git", "info"), { recursive: true });
     const r = runInit(dir, { store, host, local: true });

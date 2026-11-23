@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Api, RecordQuery } from "../api";
 import { ApiError } from "../api";
 import { KINDS, KNOWN_AGENTS, type Entry, type EntryPatch, type HistoryEvent, type SecretFinding } from "../types";
@@ -21,28 +21,40 @@ export function Records(props: { api: Api; project: string | undefined; refresh:
   const [items, setItems] = useState<Entry[] | null>(null);
   const [total, setTotal] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
-  const [history, setHistory] = useState<HistoryEvent[]>([]);
+  const [history, setHistory] = useState<{ id: string; events: HistoryEvent[] } | null>(null);
+  const latest = useRef(0);
   const [editing, setEditing] = useState<{ id: string; secrets?: SecretFinding[] } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = (offset = 0) =>
-    props.api
+  const load = (offset = 0) => {
+    const request = ++latest.current;
+    return props.api
       .records({ project: props.project, q, kind, status, agent, limit: PAGE, offset })
       .then((r) => {
+        if (request !== latest.current) return;
         setItems((prev) => (offset ? [...(prev ?? []), ...r.items] : r.items));
         setTotal(r.total);
       })
-      .catch((err: Error) => toast(t("toast.error", { msg: err.message }), "error"));
+      .catch((err: Error) => {
+        if (request === latest.current) toast(t("toast.error", { msg: err.message }), "error");
+      });
+  };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setItems(null);
     const timer = setTimeout(() => load(0), q ? 200 : 0);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); latest.current++; };
   }, [props.project, props.refresh, q, kind, status, agent]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    let current = true;
+    setHistory(null);
     if (!open) return;
-    props.api.entry(open).then((d) => setHistory(d.history)).catch(() => setHistory([]));
-  }, [open, props.refresh]);
+    props.api.entry(open).then((d) => {
+      if (current) setHistory({ id: open, events: d.history });
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [open, props.project, props.refresh]);
 
   async function run(fn: () => Promise<unknown>, done: string) {
     setBusy(true);
@@ -51,7 +63,7 @@ export function Records(props: { api: Api; project: string | undefined; refresh:
       toast(done);
       setEditing(null);
       props.onChanged();
-      await load(0);
+
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && Array.isArray(err.data.secrets) && editing) {
         setEditing({ id: editing.id, secrets: err.data.secrets as SecretFinding[] });
@@ -146,7 +158,7 @@ export function Records(props: { api: Api; project: string | undefined; refresh:
                 )}
                 {open === e.id && (
                   <ol class="history" aria-label={t("records.history")}>
-                    {history.map((h, i) => (
+                    {(history?.id === open ? history?.events ?? [] : []).map((h, i) => (
                       <li key={i}>
                         <span class="history-actor">{h.actor}</span> {historyLabel(t, h.type)}
                         {h.detail ? <span class="muted"> · {h.detail}</span> : null}

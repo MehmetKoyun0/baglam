@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ContextStore } from "../src/store.js";
@@ -27,7 +28,7 @@ describe("export / import", () => {
     expect(data.entries).toHaveLength(4);
     const dst = new ContextStore(":memory:");
     const r = importJson(dst, JSON.parse(JSON.stringify(data)), { by: "human:ev" });
-    expect(r).toEqual({ imported: 4, approvedNow: 2, skipped: 0, blocked: [], handoffs: 0, autonomousInFile: [] });
+    expect(r).toEqual({ imported: 4, approvedNow: 2, skipped: 0, blocked: [], failures: [], handoffs: 0, autonomousInFile: [] });
     expect(dst.visible(P, "cursor").map((e) => e.title).sort()).toEqual(src.visible(P, "cursor").map((e) => e.title).sort());
     const old = data.entries.find((e) => e.title === "Use Postgres")!;
     expect(dst.get(old.id)?.status).toBe("superseded");
@@ -35,11 +36,102 @@ describe("export / import", () => {
     expect(dst.listProjects()[0]).toMatchObject({ key: P, name: "app" });
   });
 
+  it("skips replacement links to another project, including forward references", () => {
+    const entries = exportJson(src).entries;
+    const target = entries.find((e) => e.title === "Prod is read-only")!;
+    const pending = entries.find((e) => e.status === "proposed")!;
+    const dst = new ContextStore(":memory:");
+    const result = importJson(dst, { format: "baglam/1", entries: [
+      { ...pending, project: "other", supersedes: target.id }, target,
+    ] }, { by: "owner" });
+    expect(result).toMatchObject({ imported: 1, skipped: 0, failures: [{ id: pending.id }] });
+    expect(dst.get(pending.id)).toBeUndefined();
+    expect(dst.get(target.id)?.status).toBe("approved");
+    dst.close();
+  });
+
+  it("rolls back approval and history changes for a legacy out-of-project link", () => {
+    const target = src.visible(P, "codex")[0];
+    const pending = src.propose({ project: P, kind: "fact", title: "Replacement", body: "Text", sourceAgent: "codex" });
+    const path = join(mkdtempSync(join(tmpdir(), "baglam-legacy-")), "legacy.db");
+    const dst = new ContextStore(path);
+    dst.importEntry(target, []);
+    dst.importEntry({ ...pending, project: "other" }, []);
+    // Model a row persisted before imports validated replacement projects.
+    const legacy = new DatabaseSync(path);
+    legacy.prepare("UPDATE entries SET supersedes = ? WHERE id = ?").run(target.id, pending.id);
+    legacy.close();
+    expect(() => dst.approve(pending.id, "owner")).toThrow(/different project/);
+    expect(dst.get(pending.id)?.status).toBe("proposed");
+    expect(dst.get(target.id)).toEqual(target);
+    expect(dst.history(target.id)).toEqual([]);
+    expect(dst.history(pending.id)).toEqual([]);
+    dst.close();
+  });
+
+  it.each(["unreviewed", "kept"] as const)("round-trips %s replacements and preserves undo", (state) => {
+    const original = src.visible(P, "codex")[0];
+    const replacement = src.propose({ project: P, kind: "fact", title: "Replacement", body: "Text",
+      sourceAgent: "codex", supersedes: original.id });
+    src.approve(replacement.id, "autonomous-mode", undefined, { auto: true, review: true });
+    if (state === "kept") src.keep([replacement.id], "owner");
+    const dst = new ContextStore(":memory:");
+    importJson(dst, JSON.parse(JSON.stringify(exportJson(src))), { by: "owner" });
+    expect(dst.get(replacement.id)?.reviewState).toBe(state);
+    expect(dst.unreviewed(P).map((e) => e.id)).toEqual(state === "kept" ? [] : [replacement.id]);
+    expect(dst.undoAuto(replacement.id, "owner").restored?.id).toBe(original.id);
+    expect(dst.get(original.id)?.status).toBe("approved");
+    dst.close();
+  });
+
+  it.each(["support", null, [12], [" "], ["support", null]].map((audience) => ({ audience })))("rejects malformed audiences ($audience)", ({ audience }) => {
+    const dst = new ContextStore(":memory:");
+    const entry = exportJson(src).entries[0];
+    expect(importJson(dst, { format: "baglam/1", entries: [{ ...entry, audience }] }, { by: "owner" }).failures)
+      .toEqual([{ id: entry.id, reason: "invalid record fields" }]);
+    expect(dst.get(entry.id)).toBeUndefined();
+    dst.close();
+  });
+
+  it("reports record and handoff write failures and exits unsuccessfully", () => {
+    const dir = mkdtempSync(join(tmpdir(), "baglam-locked-"));
+    const path = join(dir, "store.db");
+    const dst = new ContextStore(path, Date.now, { busyTimeoutMs: 5 });
+    const locker = new DatabaseSync(path);
+    const entry = exportJson(src).entries[0];
+    const file = join(dir, "archive.json");
+    writeFileSync(file, JSON.stringify({ format: "baglam/1", entries: [entry],
+      handoffs: [{ project: P, branch: "main", goal: "Restore work" }] }));
+    const out: string[] = [];
+    locker.exec("BEGIN IMMEDIATE");
+    try {
+      expect(runCli(["import", file], { store: dst, project: P, user: "owner", print: (s) => out.push(s) })).toBe(1);
+      expect(out.join("\n")).toContain(entry.id + " not imported");
+      expect(out.join("\n")).toContain(P + "/main not imported");
+      expect(out.join("\n")).toMatch(/locked|busy/i);
+    } finally {
+      locker.exec("ROLLBACK");
+      locker.close();
+      dst.close();
+    }
+  });
+
+  it("indexes history once and keeps event order for each record", () => {
+    const data = exportJson(src);
+    let reads = 0;
+    const events = data.events.map((ev) => ({ ...ev, get entryId() { reads++; return ev.entryId; } }));
+    const dst = new ContextStore(":memory:");
+    importJson(dst, { ...data, events }, { by: "owner" });
+    expect(reads).toBeLessThanOrEqual(events.length * 3);
+    for (const e of data.entries) expect(dst.history(e.id).slice(0, -1)).toEqual(src.history(e.id));
+    dst.close();
+  });
+
   it("import is idempotent", () => {
     const data = exportJson(src, { project: P });
     const dst = new ContextStore(":memory:");
     importJson(dst, data, { by: "x" });
-    expect(importJson(dst, data, { by: "x" })).toEqual({ imported: 0, approvedNow: 0, skipped: 4, blocked: [], handoffs: 0, autonomousInFile: [] });
+    expect(importJson(dst, data, { by: "x" })).toEqual({ imported: 0, approvedNow: 0, skipped: 4, blocked: [], failures: [], handoffs: 0, autonomousInFile: [] });
     expect(dst.query({ project: P }).total).toBe(4);
   });
 
@@ -59,7 +151,7 @@ describe("export / import", () => {
       { by: "x" },
     );
     expect(r.imported).toBe(1);
-    expect(r.skipped).toBe(2);
+    expect(r.failures).toHaveLength(2);
     expect(dst.get("cimport01")).toMatchObject({ title: "Minimal", tags: [], audience: ["*"] });
   });
 
@@ -119,6 +211,30 @@ describe("export / import at scale and edge cases", () => {
     fill(s, Q, 600);
     expect(exportJson(s).entries).toHaveLength(1200);
   }, 60_000);
+
+  it("exports pages and history from one snapshot while another connection commits", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "baglam-snapshot-")), "store.db");
+    const reader = new ContextStore(path);
+    const writer = new ContextStore(path);
+    try {
+      fill(writer, P, 501);
+      const before = exportJson(reader);
+      const originalQuery = reader.query.bind(reader);
+      vi.spyOn(reader, "query").mockImplementationOnce((opts) => {
+        const first = originalQuery(opts);
+        writer.retire(first.items[0].id, "later");
+        fill(writer, P, 1);
+        return first;
+      });
+      const after = exportJson(reader);
+      expect(after.entries).toEqual(before.entries);
+      expect(after.events).toEqual(before.events);
+      expect(writer.query({ project: P }).total).toBe(502);
+    } finally {
+      writer.close();
+      reader.close();
+    }
+  });
 
   it("md export includes every active record", () => {
     const s = new ContextStore(":memory:");

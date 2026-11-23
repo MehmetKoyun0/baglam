@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, fchmodSync, mkdirSync, openSync, statSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,11 +100,18 @@ export function serverEntry(host: HostEnv, agentId: string): { command: string; 
  * Replace `file` without ever leaving it half-written: write a temp file next to it, then rename.
  * A crash mid-write leaves either the old file or the new one, never a truncated config.
  */
-export function writeFileAtomic(file: string, data: string): void {
+export function writeFileAtomic(file: string, data: string, createMode = 0o666): void {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = join(dirname(file), `.${basename(file)}.baglam-${process.pid}-${Date.now()}.tmp`);
-  writeFileSync(tmp, data);
+  const previous = statSync(file, { throwIfNoEntry: false });
+  const fd = openSync(tmp, "wx", previous ? 0o600 : createMode);
   try {
+    try {
+      writeFileSync(fd, data);
+      if (previous && process.platform !== "win32") fchmodSync(fd, previous.mode & 0o777);
+    } finally {
+      closeSync(fd);
+    }
     renameSync(tmp, file);
   } catch (err) {
     rmSync(tmp, { force: true });

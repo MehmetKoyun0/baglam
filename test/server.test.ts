@@ -67,6 +67,19 @@ describe("MCP server", () => {
     for (const t of tools) expect(Object.keys(t.inputSchema.properties ?? {})).toContain("project_path");
   });
 
+  it("advertises manual approval, trust rules and autonomous review to MCP clients", async () => {
+    const client = await agent("cursor");
+    const { tools } = await client.listTools();
+    const proposal = tools.find((tool) => tool.name === "context_propose");
+    for (const description of [client.getInstructions(), proposal?.description]) {
+      expect(description).toMatch(/by default, proposals wait for human approval/i);
+      expect(description).toMatch(/verified agents, a matching trust rule can auto-approve/i);
+      expect(description).toMatch(/autonomous mode, eligible proposals from verified agents are shared immediately/i);
+      expect(description).toMatch(/owner reviews them afterward/i);
+      expect(description).toMatch(/similar to rejected records still require human approval/i);
+    }
+  });
+
   it("propose records the client name as source and stays pending", async () => {
     const c = await agent("claude-code");
     const res = await c.callTool({
@@ -108,7 +121,12 @@ describe("MCP server", () => {
     const cursor = await agent("cursor");
     expect(text(await cursor.callTool({ name: "context_search", arguments: { query: "ACME" } }))).toMatch(/no matching/i);
     expect((await cursor.callTool({ name: "context_get", arguments: { id: e.id } })).isError).toBe(true);
-    const support = await agent("support");
+    const unbound = await agent("support");
+    expect(text(await unbound.callTool({ name: "context_brief", arguments: {} }))).not.toContain(e.title);
+    expect(text(await unbound.callTool({ name: "context_search", arguments: { query: "ACME" } }))).toMatch(/no matching/i);
+    expect((await unbound.callTool({ name: "context_get", arguments: { id: e.id } })).isError).toBe(true);
+    expect(text(await propose(unbound, { title: e.title, body: e.body }))).not.toContain(e.id);
+    const support = await agent("generic", { agent: "support" });
     expect(text(await support.callTool({ name: "context_search", arguments: { query: "ACME" } }))).toContain("Refunded twice");
     expect(text(await support.callTool({ name: "context_get", arguments: { id: e.id } }))).toContain(e.id);
   });
@@ -117,6 +135,20 @@ describe("MCP server", () => {
     const res = await propose(await agent("cursor"), { supersedes: "cmissing" });
     expect(res.isError).toBe(true);
     expect(text(res)).toMatch(/unknown entry/);
+  });
+
+  it("expires a direct read at the same instant as search and brief", async () => {
+    store.close();
+    let now = 1000;
+    store = new ContextStore(":memory:", () => now);
+    const e = store.addApproved({ project: P, title: "Temporary", kind: "fact", body: "Temporary body", ttlDays: 1 }, "owner");
+    const client = await agent("cursor");
+    const get = () => client.callTool({ name: "context_get", arguments: { id: e.id } });
+    expect(text(await get())).toContain(e.body);
+    now = e.expiresAt!;
+    expect((await get()).isError).toBe(true);
+    expect(text(await client.callTool({ name: "context_search", arguments: { query: e.title } }))).toMatch(/no matching/i);
+    expect(text(await client.callTool({ name: "context_brief", arguments: {} }))).not.toContain(e.body);
   });
 
   it("uses client roots", async () => {

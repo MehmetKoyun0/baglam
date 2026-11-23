@@ -19,7 +19,9 @@ function openBrowser(url: string): void {
         ? ["open", [url]]
         : ["xdg-open", [url]];
   try {
-    spawn(cmd, args as string[], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    const child = spawn(cmd, args as string[], { detached: true, stdio: "ignore", windowsHide: true });
+    child.once("error", () => { /* the printed link remains available */ });
+    child.unref();
   } catch {
     /* the URL is printed anyway */
   }

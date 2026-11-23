@@ -52,7 +52,7 @@ function serversOf(data: Json, key: string, file: string): { ok: true; servers: 
 
 export function write(file: string, data: Json, bom: boolean): void {
   backupOnce(file);
-  writeFileAtomic(file, (bom ? BOM : "") + JSON.stringify(data, null, 2) + "\n");
+  writeFileAtomic(file, (bom ? BOM : "") + JSON.stringify(data, null, 2) + "\n", 0o600);
 }
 
 export function jsonClient(o: JsonClientOptions): ClientAdapter {

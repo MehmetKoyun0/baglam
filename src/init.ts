@@ -55,7 +55,7 @@ function allTargets(dir: string): Record<"claude" | "agents" | "gemini" | "curso
 }
 
 /** Resolve the git common dir (handling normal repos and linked worktrees), or null outside git. */
-function findGitCommonDir(dir: string): string | null {
+function findGitDirs(dir: string): { root: string; common: string } | null {
   for (let d = resolve(dir); ; d = dirname(d)) {
     const dotGit = join(d, ".git");
     if (existsSync(dotGit)) {
@@ -67,9 +67,9 @@ function findGitCommonDir(dir: string): string | null {
       }
       const commonFile = join(gitDir, "commondir");
       if (existsSync(commonFile)) {
-        return resolve(gitDir, readFileSync(commonFile, "utf8").trim());
+        return { root: d, common: resolve(gitDir, readFileSync(commonFile, "utf8").trim()) };
       }
-      return gitDir;
+      return { root: d, common: gitDir };
     }
     if (dirname(d) === d) return null;
   }
@@ -77,14 +77,13 @@ function findGitCommonDir(dir: string): string | null {
 
 /** Add local-only ignore patterns to `.git/info/exclude` without touching tracked `.gitignore`. */
 function addLocalExcludes(dir: string, files: string[]): string[] {
-  const gitDir = findGitCommonDir(dir);
-  if (!gitDir) return [];
-  const repoRoot = dirname(gitDir);
-  const excludeFile = join(gitDir, "info", "exclude");
+  const git = findGitDirs(dir);
+  if (!git) return [];
+  const excludeFile = join(git.common, "info", "exclude");
   const cur = existsSync(excludeFile) ? readFileSync(excludeFile, "utf8") : "";
   const eol = cur.includes("\r\n") ? "\r\n" : "\n";
   const existing = new Set(cur.split(/\r?\n/).map((l) => l.trim()));
-  const relOf = (p: string) => relative(repoRoot, p).replace(/\\/g, "/");
+  const relOf = (p: string) => relative(git.root, p).replace(/\\/g, "/");
   const want = [relOf(join(dir, ".baglam")) + "/", ...files.map(relOf)].filter((p) => p && !p.startsWith(".."));
   const added = want.filter((p) => !existing.has(p));
   if (!added.length) return [];

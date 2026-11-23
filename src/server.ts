@@ -30,6 +30,12 @@ export interface ServerOptions {
 /** An agent whose own task has not been checkpointed for this long gets a reminder on its next tool call. */
 const STALE_CHECKPOINT_MS = 5 * 60_000;
 
+const PROPOSAL_VISIBILITY =
+  "By default, proposals wait for human approval before they are shared. For verified agents, a matching " +
+  "trust rule can auto-approve new records that do not replace or resemble existing records. In autonomous " +
+  "mode, eligible proposals from verified agents are shared immediately with their intended audience and " +
+  "the owner reviews them afterward. Proposals similar to rejected records still require human approval. ";
+
 const kindSchema = z.enum(KINDS);
 const projectPathSchema = z
   .string()
@@ -52,13 +58,15 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
       instructions:
         "Bağlam shares approved project context between AI agents. Call context_brief at the start of a task. " +
         "Call context_propose when you settle a decision, learn a convention or user preference, or hit a pitfall " +
-        "other agents should know about. Proposals reach other agents only after a human approves them. " +
+        "other agents should know about. " + PROPOSAL_VISIBILITY +
         "Always pass project_path (your workspace folder) when you know it.",
     },
   );
 
   const agentName = (): string =>
     opts.agent ?? server.server.getClientVersion()?.name?.trim() ?? "unknown-agent";
+
+  const audienceAgent = opts.agent ?? "*"; // Unbound connections can read only public records.
 
   // Client roots, fetched lazily and dropped whenever the client says they changed.
   let rootsCache: string[] | undefined;
@@ -142,14 +150,14 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
   }
 
   async function briefFor(project: ProjectRef, agent: string): Promise<string> {
-    const total = store.countVisible(project.key, agent, COUNT_CAP);
+    const total = store.countVisible(project.key, audienceAgent, COUNT_CAP);
     const work = await workState(project);
     return formatBrief({
       handoff: { live: work.live, git: work.git, otherBranches: work.otherBranches },
       project,
       agent,
       // A brief holds a few dozen records at most; fetch the top slice in priority order and count the rest.
-      entries: store.visible(project.key, agent, { limit: 150, byPriority: true }),
+      entries: store.visible(project.key, audienceAgent, { limit: 150, byPriority: true }),
       total,
       totalCapped: total >= COUNT_CAP,
       budgetTokens: briefBudgetFromEnv(),
@@ -230,7 +238,7 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
     guard(async ({ query, kind, limit, project_path }) => {
       const r = await resolve(project_path);
       if (!r.ok) return r.message;
-      const hits = store.search(r.project.key, agentName(), query, { kind, limit });
+      const hits = store.search(r.project.key, audienceAgent, query, { kind, limit });
       if (!hits.length) return `No matching approved records for "${query}".`;
       return [FRAMING, ...hits.map((e) => formatEntry(e))].join("\n\n");
     }),
@@ -247,15 +255,8 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
     guard(async ({ id, project_path }) => {
       const r = await resolve(project_path);
       if (!r.ok) return r.message;
-      const e = store.get(id);
-      const agent = agentName();
-      const visibleToAgent =
-        e &&
-        e.project === r.project.key &&
-        (e.audience.includes("*") || e.audience.includes(agent)) &&
-        e.status !== "proposed" &&
-        e.status !== "rejected";
-      if (!visibleToAgent) throw new Error(`no record ${id} is visible to ${agent} in this project`);
+      const e = store.getForAgent(id, r.project.key, audienceAgent);
+      if (!e) throw new Error('no record ' + id + ' is visible to ' + agentName() + ' in this project');
       return `${FRAMING}\n\n${formatEntry(e, { full: true })}`;
     }),
   );
@@ -265,8 +266,8 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
     {
       title: "Propose shared context",
       description:
-        "Propose a record for other agents on this project. It is stored as pending and becomes visible " +
-        "only after the project owner approves it. Write it so an agent with no other context can act on it. " +
+        "Propose a record for other agents on this project. " + PROPOSAL_VISIBILITY +
+        "Write it so an agent with no other context can act on it. " +
         "Do not include secrets, credentials or personal data.",
       inputSchema: {
         kind: kindSchema.describe(
@@ -312,12 +313,8 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
           const base = `Proposed ${e.id} ("${e.title}") for ${label(r.project)}. It is pending human approval and is not yet visible to other agents.`;
           // Only name records this agent may already read: never other agents' pending proposals
           // or records whose audience leaves it out. The owner sees the full list in review.
-          const agent = agentName();
-          const shown = outcome.similar.filter(
-            (s) =>
-              s.status === "approved" &&
-              (s.expiresAt === null || s.expiresAt > Date.now()) &&
-              (s.audience.includes("*") || s.audience.includes(agent)),
+          const shown = outcome.similar.filter((s) =>
+            s.status === "approved" && store.getForAgent(s.id, r.project.key, audienceAgent),
           );
           if (!shown.length) return base;
           const list = shown.map((s) => `${s.id} "${s.title}"`).join(", ");
