@@ -217,8 +217,24 @@ describe("export / import at scale and edge cases", () => {
     const reader = new ContextStore(path);
     const writer = new ContextStore(path);
     try {
-      fill(writer, P, 501);
+      // Seed more than one export page with one SQLite commit. Only the write
+      // between pages needs to go through the store's normal record lifecycle.
+      const seed = new DatabaseSync(path);
+      try {
+        seed.prepare(`
+          WITH RECURSIVE ids(n) AS (
+            SELECT 1
+            UNION ALL
+            SELECT n + 1 FROM ids WHERE n < 501
+          )
+          INSERT INTO entries (id, project, kind, title, body, status, source_agent, created_at, decided_at)
+          SELECT printf('cseed%03d', n), ?, 'fact', 'Fixture ' || n, 'Body', 'approved', 'human', n, n FROM ids
+        `).run(P);
+      } finally {
+        seed.close();
+      }
       const before = exportJson(reader);
+      expect(before.entries).toHaveLength(501);
       const originalQuery = reader.query.bind(reader);
       vi.spyOn(reader, "query").mockImplementationOnce((opts) => {
         const first = originalQuery(opts);
