@@ -56,6 +56,7 @@ describe.skipIf(!hasGit)("git snapshot", () => {
     expect(s.commitsSince.map((c) => c.subject)).toContain("second commit");
     const later = (await gitSnapshot(d, Date.now() + 60_000))!;
     expect(later.commitsSince).toEqual([]);
+    expect(later.lastCommit?.subject).toBe("second commit");
   });
 
   it("caps changed list at 20 with full count", async () => {

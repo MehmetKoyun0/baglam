@@ -4,10 +4,26 @@ All notable changes to Bağlam. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-23
+
+### Security
+- **Project isolation:** reject imported replacement links across projects and enforce the project boundary when approving or undoing a replacement.
+- **Client config permissions:** preserve existing POSIX permission bits during setup and removal. Create new client config files with owner-only access.
+- **MCP record visibility:** clients without a configured agent identity can read public records only, and expired records are unavailable through direct lookup.
+- **Import audience validation:** reject malformed audience fields to prevent restricted records from becoming public.
+
 ### Fixed
+- **Autonomous review:** JSON round trips preserve pending and completed review states so automatically shared records remain reviewable and can still be undone.
+- **Backup consistency:** JSON exports use a single SQLite snapshot across pages, history, handoffs and settings. Imports identify failed records and handoffs and return a nonzero exit code on incomplete restores.
+- **Automatic capture:** keep revised requests that reuse a heading while coalescing duplicate hook deliveries.
+- **Review panel:** ignore stale responses when switching records or filters. On Linux, the printed panel link remains usable when the browser launcher is missing.
+- **Linked worktrees:** calculate `baglam init --local` exclusions relative to the active worktree and write them to Git's common exclude file.
+- **MCP guidance:** explain the default human approval step, automatic approval through trust rules and review after immediate sharing in autonomous mode.
 - **Instant panel updates:** `GET /api/overview` caches slow CLI tool probes (such as `claude mcp get`) for 30 s while still reading pending counts and hook activity live from SQLite, eliminating the ~1.5 s badge lag after approving or rejecting proposals (`?fresh=1` bypasses the cache).
 - **Faster `baglam doctor`:** MCP server handshakes now run concurrently across detected tools instead of sequentially (preserving deterministic output order).
 - **`baglam handoff` CLI:** also lists other branches with tasks in progress when the current branch has a live task.
+- **Git snapshot performance:** fetch worktree status and commit history in parallel to reduce snapshot latency on Windows.
+- **Import performance:** index exported history by record ID so import processes it in one pass.
 
 ## [1.0.0-rc.6] - 2026-11-21
 

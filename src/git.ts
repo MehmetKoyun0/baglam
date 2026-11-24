@@ -83,7 +83,13 @@ const parseLog = (out: string) =>
 /** Read-only snapshot of the work tree. Never throws: any failure or timeout gives null. */
 export async function gitSnapshot(dir: string, since?: number, opts: { timeoutMs?: number } = {}): Promise<GitSnapshot | null> {
   const timeout = opts.timeoutMs ?? 2000;
-  const status = await run(dir, ["status", "--porcelain=v1", "-b", "--untracked-files=all"], timeout);
+  const format = "--format=%h\x1f%ct\x1f%s";
+  // Status and history are independent. Overlap process startup, which is costly on Windows.
+  const [status, recent, last] = await Promise.all([
+    run(dir, ["status", "--porcelain=v1", "-b", "--untracked-files=all"], timeout),
+    since !== undefined ? run(dir, ["log", `-${MAX_COMMITS}`, `--since=@${Math.floor(since / 1000)}`, format], timeout) : Promise.resolve(null),
+    run(dir, ["log", "-1", format], timeout),
+  ]);
   if (status === null) return null;
   const lines = status.split("\n").filter(Boolean);
   const head = lines[0]?.startsWith("## ") ? lines.shift()!.slice(3) : "";
@@ -100,11 +106,6 @@ export async function gitSnapshot(dir: string, since?: number, opts: { timeoutMs
     // Bağlam's own project marker is not work the agent did.
     .filter((p) => !p.startsWith(".baglam/"));
 
-  const format = "--format=%h\x1f%ct\x1f%s";
-  const [recent, last] = await Promise.all([
-    since !== undefined ? run(dir, ["log", `-${MAX_COMMITS}`, `--since=@${Math.floor(since / 1000)}`, format], timeout) : Promise.resolve(null),
-    run(dir, ["log", "-1", format], timeout),
-  ]);
   const lastCommit = last ? parseLog(last)[0] : undefined;
   return {
     branch,
