@@ -36,6 +36,18 @@ describe("submitProposal", () => {
     expect(submitProposal(store, input({ title: "One more", body: "Something else entirely new here" }), ctx).status).toBe("pending");
   });
 
+  it("shares one review budget between pending and autonomous proposals", () => {
+    const auto = { ...ctx, autonomous: true };
+    submitProposal(store, input(), ctx);
+    for (let i = 1; i < 20; i++) expect(submitProposal(store, input(), auto).status).toBe("auto-shared");
+    expect(submitProposal(store, input(), auto).status).toBe("refused");
+    expect(store.unreviewed(P)).toHaveLength(19);
+    expect(submitProposal(store, input({ project: Q }), auto).status).toBe("auto-shared");
+    expect(submitProposal(store, input({ sourceAgent: "cursor" }), auto).status).toBe("auto-shared");
+    store.keep([store.unreviewed(P).find(e => e.sourceAgent === "codex")!.id], "owner");
+    expect(submitProposal(store, input(), auto).status).toBe("auto-shared");
+  });
+
   it("flood limit is per agent", () => {
     for (let i = 0; i < 3; i++) submitProposal(store, input({ title: `T${i} kappa${i}`, body: `B${i} lambda${i} sigma${i}` }), { ...ctx, floodLimit: 3 });
     const other = submitProposal(store, input({ sourceAgent: "cursor", title: "Other agent", body: "Separate quota applies" }), { ...ctx, floodLimit: 3 });

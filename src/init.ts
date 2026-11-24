@@ -5,7 +5,7 @@ import { writeFileAtomic, type HostEnv } from "./host.js";
 import type { Change } from "./clients/types.js";
 import { antigravity, cursor, geminiCli, vscode, windsurf } from "./clients/json.js";
 import { claudeCode } from "./clients/claude.js";
-import { normalizeProject } from "./config.js";
+import { normalizeProject, UUID } from "./config.js";
 import { createMarker, readMarker, resolveDirectory, type ProjectRef } from "./project.js";
 import { CURSOR_RULE_HEADER, WINDSURF_RULE_HEADER, instructionBlock, removeBlock, upsertBlock } from "./instructions.js";
 
@@ -136,7 +136,7 @@ export function runInit(dir: string, opts: InitOptions): InitResult {
   const current = readMarker(target);
   const previous =
     current && "error" in current
-      ? opts.store.listProjects({ includeArchived: true }).find((p) => p.path && normalizeProject(p.path) === normalizeProject(target))
+      ? opts.store.listProjects({ includeArchived: true }).find((p) => UUID.test(p.key) && p.path && normalizeProject(p.path) === normalizeProject(target))
       : undefined;
   const customName = opts.name?.trim() || undefined;
   // Throws for home/system folders before anything is written.

@@ -1,6 +1,6 @@
 import type { ContextStore, Entry, EventType, Kind } from "./store.js";
 import { KINDS } from "./store.js";
-import { scanEntryFields, type SecretFinding } from "./guards.js";
+import { MAX_DECISION_NOTE, scanSecrets, scanEntryFields, type SecretFinding } from "./guards.js";
 import { day } from "./format.js";
 import type { Handoff } from "./handoff.js";
 
@@ -182,12 +182,16 @@ export function importJson(
       result.failures.push({ id, reason: "invalid record fields" });
       continue;
     }
-    const findings = scanEntryFields(e);
+    if ((e.decisionNote?.length ?? 0) > MAX_DECISION_NOTE) {
+      result.failures.push({ id: e.id, reason: "decision note exceeds 1000 characters" });
+      continue;
+    }
+    const history = historyById.get(e.id) ?? [];
+    const findings = [...scanEntryFields(e), ...scanSecrets(e.decisionNote ?? ""), ...history.flatMap((ev) => scanSecrets(ev.detail ?? ""))];
     if (findings.length && !opts.force) {
       result.blocked.push({ id: e.id, findings });
       continue;
     }
-    const history = historyById.get(e.id) ?? [];
     try {
       if (store.importEntry(e, history, { actor: opts.by, detail: opts.source ?? null }, projectsById)) {
         result.imported++;

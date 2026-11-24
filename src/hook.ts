@@ -5,9 +5,10 @@
  * session start or when control switches from another agent. Never blocks or slows down the tool:
  * always exits 0 within the deadline. Kept small on purpose (no MCP SDK).
  */
-import { appendFileSync, mkdirSync, realpathSync, statSync, truncateSync } from "node:fs";
+import { appendFileSync, realpathSync, statSync, truncateSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { ensureDataDirectory, protectExisting } from "./private-files.js";
 import { resolveDbPath } from "./config.js";
 import { formatBrief, formatHandoff } from "./format.js";
 import { fastBranch } from "./git.js";
@@ -40,13 +41,14 @@ export interface HookIo {
 function logError(dbPath: string, what: string, err: unknown): void {
   try {
     const file = join(dirname(dbPath), "hook-errors.log");
-    mkdirSync(dirname(file), { recursive: true });
+    ensureDataDirectory(file);
+    if (process.platform !== "win32") protectExisting(file);
     try {
       if (statSync(file).size > MAX_LOG) truncateSync(file, 0);
     } catch {
       // No log yet.
     }
-    appendFileSync(file, `${new Date().toISOString()} ${what}: ${(err as Error)?.stack ?? String(err)}\n`);
+    appendFileSync(file, `${new Date().toISOString()} ${what}: ${(err as Error)?.stack ?? String(err)}\n`, { mode: 0o600 });
   } catch {
     // Nowhere to write: stay silent rather than disturb the tool.
   }

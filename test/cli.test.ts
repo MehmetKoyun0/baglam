@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { ContextStore } from "../src/store.js";
 import { runCli } from "../src/cli.js";
 import { resolveProject } from "../src/project.js";
-import { mkdtempSync } from "node:fs";
+import { chmodSync, statSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,6 +23,31 @@ describe("baglam CLI", () => {
   });
 
   const AWS = ["AKIA", "IOSFODNN7EXAMPLE"].join("");
+
+  it.skipIf(process.platform === "win32")("writes new and existing exports privately", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "baglam-export-")), "out.json");
+    const args = ["export", "--format", "json", "--out", file];
+    expect(run(...args)).toBe(0);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    chmodSync(file, 0o644);
+    expect(run(...args)).toBe(0);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it("checks audience and decision notes before storing anything", () => {
+    expect(run("add", "fact", "Title", "Body", "--to", AWS)).toBe(1);
+    expect(store.all(P)).toEqual([]);
+    const entry = propose();
+    for (const cmd of ["approve", "reject"]) {
+      expect(run(cmd, entry.id, "--note", AWS)).toBe(1);
+      expect(run(cmd, entry.id, "--note", "a".repeat(1001))).toBe(1);
+      expect(store.get(entry.id)?.status).toBe("proposed");
+      expect(store.history(entry.id)).toHaveLength(1);
+    }
+    store.approve(entry.id, "owner");
+    expect(() => store.retire(entry.id, "owner", AWS)).toThrow(/secret/);
+    expect(store.get(entry.id)?.status).toBe("approved");
+  });
 
   it("add refuses a secret without --force", () => {
     expect(run("add", "fact", "Deploy key", `The key is ${AWS}`)).toBe(1);

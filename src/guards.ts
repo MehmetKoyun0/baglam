@@ -54,10 +54,11 @@ const PATTERNS: SecretPattern[] = [
   },
   {
     type: "Secret assignment",
-    re: /\b([A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|API_KEY|APIKEY|ACCESS_TOKEN|AUTH_TOKEN|PRIVATE_KEY|DB_PASS))\s*[:=]\s*["']?([^\s"'`,;]{8,})["']?/gi,
+    re: /\b([A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|API_KEY|APIKEY|[A-Z0-9]+_TOKEN|ACCESS_KEY|STORAGE_KEY|ENCRYPTION_KEY|SIGNING_KEY|MASTER_KEY|PRIVATE_KEY|DB_PASS))\s*[:=]\s*["']?([^\s"'`,;]{8,})["']?/gi,
     accept: (m) => {
       const val = m[2];
       if (PLACEHOLDER_VALUE.test(val)) return false;
+      if (looksLikeBase64Credential(val)) return true;
       if (val.includes("://") || val.startsWith("/") || val.startsWith(".")) return false;
       if (/^[a-z]+(?:[A-Z][a-z]+)+$/.test(val)) return false; // camelCase identifier
       return true;
@@ -67,6 +68,7 @@ const PATTERNS: SecretPattern[] = [
 ];
 
 // No "/" here: slashes separate path and URL segments, which are checked one by one.
+const BASE64_CANDIDATE = /(?<![\w./:+\-=])((?=[A-Za-z0-9+]*\/)[A-Za-z0-9+/]{32,}={0,2})(?![\w./+\-=])/g;
 const CANDIDATE = /[A-Za-z0-9+=_-]{32,}/g;
 const ENTROPY_THRESHOLD = 4.2;
 const HASH_PREFIX = /^(?:sha(?:1|224|256|384|512)|md5)-/i;
@@ -90,6 +92,12 @@ function entropy(s: string): number {
     h -= p * Math.log2(p);
   }
   return h;
+}
+
+function looksLikeBase64Credential(value: string): boolean {
+  return value.length >= 32 && value.length % 4 === 0 && value.includes("/") &&
+    /^[A-Za-z0-9+/]+={0,2}$/.test(value) && /[A-Z]/.test(value) && /[a-z]/.test(value) &&
+    entropy(value) > ENTROPY_THRESHOLD;
 }
 
 /** Random-looking token: mixed case, several digits, not hex, high entropy. */
@@ -132,11 +140,13 @@ function findSecretSpans(text: string): MatchSpan[] {
       spans.push({ type, masked: mask(m[0]), redactStart: start + relOff, redactEnd: start + relOff + relLen });
     }
   }
-  for (const m of text.matchAll(CANDIDATE)) {
-    const start = m.index!, end = start + m[0].length;
-    if (overlaps(start, end) || !looksRandom(m[0])) continue;
-    taken.push([start, end]);
-    spans.push({ type: "High-entropy string", masked: mask(m[0]), redactStart: start, redactEnd: end });
+  for (const [pattern, accepts] of [[BASE64_CANDIDATE, looksLikeBase64Credential], [CANDIDATE, looksRandom]] as const) {
+    for (const m of text.matchAll(pattern)) {
+      const start = m.index!, end = start + m[0].length;
+      if (overlaps(start, end) || !accepts(m[0])) continue;
+      taken.push([start, end]);
+      spans.push({ type: "High-entropy string", masked: mask(m[0]), redactStart: start, redactEnd: end });
+    }
   }
   return spans;
 }
@@ -169,6 +179,14 @@ export function scanEntryFields(f: {
   audience?: string[];
 }): SecretFinding[] {
   return [f.title, f.body, f.rationale ?? "", ...(f.tags ?? []), ...(f.audience ?? [])].flatMap((t) => scanSecrets(t));
+}
+
+export const MAX_DECISION_NOTE = 1000;
+
+export function validateDecisionNote(note?: string | null): void {
+  if (!note) return;
+  if (note.length > MAX_DECISION_NOTE) throw new Error("decision note exceeds 1000 characters");
+  if (scanSecrets(note).length) throw new Error("decision note contains a possible secret");
 }
 
 export function describeFindings(findings: SecretFinding[]): string {

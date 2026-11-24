@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findProjectRoot, normalizeProject } from "./config.js";
+import { findProjectRoot, normalizeProject, UUID } from "./config.js";
 
 export interface ProjectRef {
   /** Marker id when initialised, else the normalised folder path (v0.1 key). */
@@ -32,6 +32,7 @@ export function readMarker(dir: string): { id: string; name: string } | { error:
   try {
     const data = JSON.parse(readFileSync(file, "utf8")) as { id?: unknown; name?: unknown };
     if (typeof data.id !== "string" || !data.id.trim()) return { error: `${file} has no "id"` };
+    if (!UUID.test(data.id.trim())) return { error: `${file} has an invalid project id` };
     const name = typeof data.name === "string" && data.name.trim() ? data.name.trim() : basename(dir);
     return { id: data.id.trim(), name };
   } catch (err) {

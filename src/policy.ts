@@ -37,19 +37,18 @@ export function submitProposal(
   const findings = scanEntryFields(input);
   if (findings.length) return { status: "blocked", findings };
 
-  const waiting = store.countPending(input.project, input.sourceAgent);
-  if (waiting >= ctx.floodLimit) {
-    return {
-      status: "refused",
-      reason: `${waiting} proposals are already waiting for review; stop proposing until the owner reviews them.`,
-    };
-  }
-
   const text = { title: input.title, body: input.body };
   const similar = store.findSimilar(input.project, text, { kind: input.kind });
   // Look-alikes of records the owner already rejected or replaced: never let a rule bring those back.
   const closed = store.findClosedSimilar(input.project, text, { kind: input.kind });
-  const entry = store.propose({ ...input, similarTo: [...similar, ...closed].map((e) => e.id) });
+  const entry = store.proposeWithinLimit({ ...input, similarTo: [...similar, ...closed].map((e) => e.id) }, ctx.floodLimit);
+
+  if (typeof entry === "number") {
+    return {
+      status: "refused",
+      reason: `${entry} proposals are already waiting for review; stop proposing until the owner reviews them.`,
+    };
+  }
 
   // Autonomous mode: share now, review afterwards; only something the owner already rejected waits.
   if (ctx.autonomous && ctx.agentVerified && !store.findRejectedSimilar(input.project, text, { kind: input.kind }).length) {

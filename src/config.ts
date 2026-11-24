@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Canonical project key: absolute, forward slashes, lower-case on Windows, no trailing slash. */
 export function normalizeProject(path: string): string {
   let p = resolve(path).normalize("NFC").replace(/\\/g, "/");

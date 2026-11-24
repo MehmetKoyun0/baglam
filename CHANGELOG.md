@@ -4,6 +4,16 @@ All notable changes to Bağlam. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-24
+
+### Security
+- Count pending and automatically shared records awaiting review against the same per-agent, per-project limit.
+- Restrict POSIX permissions on database files, migration backups, hook logs and exports.
+- Scan credential assignments, Base64 credentials, decision notes, CLI audiences and imported event details.
+
+### Fixed
+- Repair invalid project markers with a valid UUID and preserve path-based records when naming the project.
+
 ## [1.0.0] - 2026-11-23
 
 ### Security

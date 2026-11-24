@@ -1,5 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, renameSync, mkdtempSync, rmSync } from "node:fs";
+
+import { join } from "node:path";
+import { protectExisting } from "./private-files.js";
 
 /** The v0.1 schema, exactly as shipped. Version 1. */
 export const V1_SCHEMA = `
@@ -188,16 +191,31 @@ function currentVersion(db: DatabaseSync): number {
  */
 export function migrate(db: DatabaseSync, filePath: string): { from: number; to: number } {
   const seen = checkVersion(currentVersion(db));
+  if (process.platform !== "win32" && filePath !== ":memory:") {
+    for (let v = 1; v < SCHEMA_VERSION; v++) protectExisting(filePath + ".v" + v + "-backup");
+  }
   if (seen === SCHEMA_VERSION) return { from: seen, to: seen };
 
   // Consistent snapshot (includes WAL content) before anything changes. Several processes may get
   // here at once; the first one writes the backup, the others find it already there.
   const backup = `${filePath}.v${seen}-backup`;
   if (seen >= 1 && filePath !== ":memory:" && !existsSync(backup)) {
+    const dir = mkdtempSync(backup + "-");
+    const snapshot = join(dir, "snapshot");
     try {
-      db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
-    } catch (err) {
-      if (!existsSync(backup)) throw err;
+      db.exec(`VACUUM INTO '${snapshot.replace(/'/g, "''")}'`);
+      if (process.platform !== "win32") chmodSync(snapshot, 0o600);
+      // Publish only a complete snapshot, without replacing another process's backup.
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        if (!existsSync(backup)) renameSync(snapshot, backup);
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   }
 

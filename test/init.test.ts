@@ -55,6 +55,20 @@ describe("baglam init", () => {
     expect(text).toBe("top\n\n" + instructionBlock() + "bottom\n");
   });
 
+  it.each(["invalid JSON", "path id"])("repairs a %s marker with legacy records and --name", (form) => {
+    const pathKey = normalizeProject(dir);
+    const entry = store.addApproved({ project: pathKey, kind: "fact", title: "Old", body: "Keep me" }, "owner");
+    mkdirSync(join(dir, ".baglam"));
+    const file = join(dir, ".baglam", "project.json");
+    writeFileSync(file, form === "path id" ? JSON.stringify({ id: pathKey }) : "{");
+    const { project } = runInit(dir, { store, host, name: "Renamed" });
+    expect(project.key).toMatch(/^[0-9a-f-]{36}$/);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ id: project.key, name: "Renamed" });
+    expect(store.get(entry.id)?.project).toBe(project.key);
+    expect(store.projectInfo(project.key)?.name).toBe("Renamed");
+    expect(runInit(dir, { store, host }).project.key).toBe(project.key);
+  });
+
   it("moves path-keyed records to the new id", () => {
     const old = store.addApproved(
       { project: normalizeProject(dir), kind: "convention", title: "Use pnpm", body: "pnpm only" },

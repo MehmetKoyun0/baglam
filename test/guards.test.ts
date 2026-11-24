@@ -42,6 +42,16 @@ describe("scanSecrets", () => {
     expect(found.map((f) => f.type)).toEqual(["Anthropic API key"]);
   });
 
+  it("detects and completely redacts slash-containing Base64 and credential assignments", () => {
+    const token = ["AbCdeFgHiJ", "kLMnOpQrSt", "/vWxYZaBcD", "eFgHiJkLmN"].join("");
+    for (const value of [token, token + "hA=="]) expect(redactSecrets(value).text).toBe("[redacted]");
+    for (const key of ["AWS_SECRET_ACCESS_KEY", "AZURE_STORAGE_KEY", "SIGNING_KEY", "ENCRYPTION_KEY",
+      "MASTER_KEY", "REFRESH_TOKEN", "SESSION_TOKEN", "BOT_TOKEN"]) {
+      expect(redactSecrets(key + "=" + token).text).toBe(key + "=[redacted]");
+      expect(scanSecrets(key + "=changeme")).toEqual([]);
+    }
+  });
+
   it("does not flag hashes, uuids, paths or prose", () => {
     const benign = [
       "Commit 3ec4eb0f1f64e74a1b2c3d4e5f60718293a4b5c6 fixed it.",

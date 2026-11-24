@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile, execSync } from "node:child_process";
@@ -46,6 +46,30 @@ describe("schema migrations", () => {
     expect(userVersion(db)).toBe(SCHEMA_VERSION);
     db.close();
     expect(existsSync(path + ".v1-backup")).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("restricts the database, WAL, SHM and migration backups", () => {
+    const parent = mkdtempSync(join(tmpdir(), "baglam-permissions-"));
+    const path = join(parent, "new", "baglam.db");
+    const mode = (p: string) => statSync(p).mode & 0o777;
+    const store = new ContextStore(path);
+    try {
+      expect(mode(join(parent, "new"))).toBe(0o700);
+      for (const suffix of ["", "-wal", "-shm"]) expect(mode(path + suffix)).toBe(0o600);
+    } finally {
+      store.close();
+    }
+    const legacy = tempDb();
+    const old = new DatabaseSync(legacy);
+    old.exec(V1_SCHEMA);
+    old.close();
+    chmodSync(legacy, 0o644);
+    new ContextStore(legacy).close();
+    expect(mode(legacy)).toBe(0o600);
+    expect(mode(legacy + ".v1-backup")).toBe(0o600);
+    chmodSync(legacy + ".v1-backup", 0o644);
+    new ContextStore(legacy).close();
+    expect(mode(legacy + ".v1-backup")).toBe(0o600);
   });
 
   it("schema 3 adds similar_to, defaulting to [] for existing rows", () => {

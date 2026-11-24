@@ -21,6 +21,19 @@ describe("export / import", () => {
     src.approve(src.propose({ project: P, kind: "decision", title: "Use MySQL", body: "Switched.", sourceAgent: "codex", supersedes: d.id }).id, "human:ev");
   });
 
+  it.each(["decision note", "event detail"])("screens imported %s before insertion", (field) => {
+    const data = exportJson(src);
+    const entry = data.entries[0];
+    if (field === "decision note") entry.decisionNote = AWS;
+    else data.events.find(ev => ev.entryId === entry.id)!.detail = AWS;
+    const dst = new ContextStore(":memory:");
+    expect(importJson(dst, data, { by: "owner" }).blocked.map(b => b.id)).toContain(entry.id);
+    expect(dst.get(entry.id)).toBeUndefined();
+    expect(importJson(dst, data, { by: "owner", force: true }).blocked).toEqual([]);
+    expect(dst.get(entry.id)).toBeDefined();
+    dst.close();
+  });
+
   it("json export round-trips into an empty db", () => {
     const data = exportJson(src, { project: P });
     expect(data.format).toBe("baglam/1");

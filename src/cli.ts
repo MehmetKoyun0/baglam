@@ -3,14 +3,14 @@ import { copyToClipboard } from "./clipboard.js";
 import { parseArgs } from "node:util";
 import { userInfo } from "node:os";
 import { pathToFileURL } from "node:url";
-import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { ContextStore, KINDS, type Entry, type Kind, type TrustRule } from "./store.js";
 import { day, formatEntry, formatHandoff, resumePrompt } from "./format.js";
 import { currentBranch, gitSnapshot } from "./git.js";
 import { resolveDbPath } from "./config.js";
 import { resolveProject } from "./project.js";
 import { VERSION } from "./version.js";
-import { realHost, type HostEnv } from "./host.js";
+import { realHost, writeFileAtomic, type HostEnv } from "./host.js";
 import { detectClients, runSetup } from "./setup.js";
 import { runInit } from "./init.js";
 import { ALL_CLIENTS } from "./clients/index.js";
@@ -212,7 +212,7 @@ export function runCli(argv: string[], ctx: CliContext): number | Promise<number
       case "add": {
         const [kind, title, body] = args;
         if (!body) throw new Error("add needs <kind> <title> <body>");
-        const findings = scanEntryFields({ title, body, rationale: o.why, tags: list(o.tags) });
+        const findings = scanEntryFields({ title, body, rationale: o.why, tags: list(o.tags), audience: list(o.to) });
         if (findings.length && !o.force) {
           print(
             `This looks like it contains a secret: ${describeFindings(findings)}.\n` +
@@ -312,7 +312,7 @@ Restart these apps so they load the change.${failed ? ` ${failed} tool(s) need a
             ? JSON.stringify(exportJson(ctx.store, { project: o["all-projects"] ? undefined : project }), null, 2) + "\n"
             : exportMarkdown(ctx.store, project);
         if (o.out) {
-          writeFileSync(o.out, text);
+          writeFileAtomic(o.out, text, 0o600, false);
           print(`Wrote ${o.out}`);
         } else print(text.trimEnd());
         return 0;

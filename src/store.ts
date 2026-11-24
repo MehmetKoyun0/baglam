@@ -1,7 +1,9 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { randomBytes } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { prepareDatabaseFiles } from "./private-files.js";
+import { validateDecisionNote } from "./guards.js";
+import { UUID } from "./config.js";
+import { basename } from "node:path";
 import { migrate } from "./migrate.js";
 import { HandoffRepo, type CheckpointInput, type Handoff } from "./handoff.js";
 import { planAutoEvent, type AutoEvent } from "./capture.js";
@@ -94,7 +96,7 @@ export interface ProjectInfo {
   archivedAt: number | null;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 
 export interface ProjectSummary {
   project: string;
@@ -214,7 +216,7 @@ export class ContextStore {
     private readonly clock: () => number = Date.now,
     opts: { busyTimeoutMs?: number } = {},
   ) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+    if (path !== ":memory:") prepareDatabaseFiles(path);
     // Busy timeout first: several agents' servers may open (and migrate) the same file at once.
     this.db = new DatabaseSync(path, { timeout: opts.busyTimeoutMs ?? 5000 });
     // WAL + synchronous=NORMAL: never corrupts; at worst the last commit is lost on power failure.
@@ -229,13 +231,29 @@ export class ContextStore {
 
   /** An agent proposes an entry. It stays invisible until a human approves it. */
   propose(input: NewEntry & { sourceAgent: string }): Entry {
-    return this.insert(input, requireText(input.sourceAgent, "sourceAgent", 100), "proposed");
+    return this.transaction(() => this.insert(input, requireText(input.sourceAgent, "sourceAgent", 100), "proposed"));
+  }
+
+  /** Reserve a review slot and insert under the same SQLite write lock. */
+  proposeWithinLimit(input: NewEntry & { sourceAgent: string }, limit: number): Entry | number {
+    return this.transaction(() => {
+      const agent = requireText(input.sourceAgent, "sourceAgent", 100);
+      const row = this.db.prepare(
+        "SELECT count(*) AS n FROM entries WHERE project = ? AND source_agent = ? " +
+        "AND (status = 'proposed' OR (status = 'approved' AND review_state = 'unreviewed'))",
+      ).get(input.project.trim(), agent)!;
+      const waiting = Number(row.n);
+      return waiting >= limit ? waiting : this.insert(input, agent, "proposed");
+    });
   }
 
   /** A human adds an entry directly; it is approved at once. */
   addApproved(input: NewEntry, by: string): Entry {
-    const e = this.insert(input, by, "proposed");
-    return this.approve(e.id, by);
+    return this.transaction(() => {
+      const e = this.insert(input, by, "proposed");
+      this.approveRow(e, by, undefined, false, this.clock());
+      return this.get(e.id)!;
+    });
   }
 
   get(id: string): Entry | undefined {
@@ -285,6 +303,7 @@ export class ContextStore {
 
   /** Inside a transaction. The status guard in the UPDATE makes a concurrent decision lose cleanly. */
   private approveRow(e: Entry, by: string, note: string | undefined, auto: boolean, now: number, review = false): void {
+    validateDecisionNote(note);
     const res = this.db
       .prepare(
         "UPDATE entries SET status='approved', decided_at=?, decided_by=?, decision_note=?, auto_approved=?, review_state=? WHERE id=? AND status='proposed'",
@@ -306,6 +325,7 @@ export class ContextStore {
   }
 
   reject(id: string, by: string, note?: string): Entry {
+    validateDecisionNote(note);
     const e = this.mustBePending(id);
     const now = this.clock();
     this.transaction(() => {
@@ -607,6 +627,7 @@ export class ContextStore {
 
   /** Approved record → retired: kept for history, hidden from agents. */
   retire(id: string, by: string, note?: string): Entry {
+    validateDecisionNote(note);
     const e = this.get(id);
     if (!e) throw new Error(`unknown entry ${id}`);
     if (e.status !== "approved") throw new Error(`entry ${id} is not active (status: ${e.status}); only active records can be retired`);
@@ -990,22 +1011,21 @@ export class ContextStore {
     if (input.supersedes) this.checkReplacementTarget(project, input.supersedes);
     const now = this.clock();
     const id = newId();
-    this.transaction(() => {
-      this.db
-        .prepare(
-          `INSERT INTO entries (id, project, kind, title, body, rationale, tags, audience, status,
-                                source_agent, created_at, expires_at, supersedes, similar_to)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          id, project, v.kind, v.title, v.body, v.rationale, v.tags, v.audience,
-          status, sourceAgent, now,
-          input.ttlDays ? now + Math.round(input.ttlDays * DAY_MS) : null,
-          input.supersedes ?? null,
-          JSON.stringify(cleanList(input.similarTo)),
-        );
-      this.event(id, project, "proposed", sourceAgent, null);
-    });
+    this.db
+      .prepare(
+        `INSERT INTO entries (id, project, kind, title, body, rationale, tags, audience, status,
+                              source_agent, created_at, expires_at, supersedes, similar_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id, project, v.kind, v.title, v.body, v.rationale, v.tags, v.audience,
+        status, sourceAgent, now,
+        input.ttlDays ? now + Math.round(input.ttlDays * DAY_MS) : null,
+        input.supersedes ?? null,
+        JSON.stringify(cleanList(input.similarTo)),
+      );
+    this.event(id, project, "proposed", sourceAgent, null);
+
     return this.get(id)!;
   }
 

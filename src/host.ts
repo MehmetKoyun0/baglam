@@ -100,7 +100,7 @@ export function serverEntry(host: HostEnv, agentId: string): { command: string; 
  * Replace `file` without ever leaving it half-written: write a temp file next to it, then rename.
  * A crash mid-write leaves either the old file or the new one, never a truncated config.
  */
-export function writeFileAtomic(file: string, data: string, createMode = 0o666): void {
+export function writeFileAtomic(file: string, data: string, createMode = 0o666, preserveMode = true): void {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = join(dirname(file), `.${basename(file)}.baglam-${process.pid}-${Date.now()}.tmp`);
   const previous = statSync(file, { throwIfNoEntry: false });
@@ -108,7 +108,7 @@ export function writeFileAtomic(file: string, data: string, createMode = 0o666):
   try {
     try {
       writeFileSync(fd, data);
-      if (previous && process.platform !== "win32") fchmodSync(fd, previous.mode & 0o777);
+      if (previous && preserveMode && process.platform !== "win32") fchmodSync(fd, previous.mode & 0o777);
     } finally {
       closeSync(fd);
     }

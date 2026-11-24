@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { statSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -105,6 +105,7 @@ describe("runHook", () => {
     expect(r).toEqual({ stdout: "", code: 0 });
     const log = readFileSync(join(dbPath, "..", "hook-errors.log"), "utf8");
     expect(log).toMatch(/claude-code prompt/);
+    if (process.platform !== "win32") expect(statSync(join(dbPath, "..", "hook-errors.log")).mode & 0o777).toBe(0o600);
   });
 
   it("a locked database gives up well inside the deadline (SQLite waits block the deadline timer)", () => {
