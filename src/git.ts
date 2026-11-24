@@ -80,15 +80,27 @@ const parseLog = (out: string) =>
       return { hash, at: Number(at) * 1000, subject: subject.join("\x1f") };
     });
 
+async function snapshotHistory(dir: string, since: number | undefined, timeout: number): Promise<Pick<GitSnapshot, "commitsSince" | "lastCommit">> {
+  const format = "--format=%h\x1f%ct\x1f%s";
+  if (since !== undefined) {
+    const recent = await run(dir, ["log", `-${MAX_COMMITS}`, `--since=@${Math.floor(since / 1000)}`, format], timeout);
+    // A nonempty date-limited walk from HEAD starts with HEAD itself.
+    if (recent) {
+      const commits = parseLog(recent);
+      return { lastCommit: commits[0], commitsSince: commits.filter((commit) => commit.at > since) };
+    }
+  }
+  const last = await run(dir, ["log", "-1", format], timeout);
+  return last ? { lastCommit: parseLog(last)[0], commitsSince: [] } : { commitsSince: [] };
+}
+
 /** Read-only snapshot of the work tree. Never throws: any failure or timeout gives null. */
 export async function gitSnapshot(dir: string, since?: number, opts: { timeoutMs?: number } = {}): Promise<GitSnapshot | null> {
   const timeout = opts.timeoutMs ?? 2000;
-  const format = "--format=%h\x1f%ct\x1f%s";
   // Status and history are independent. Overlap process startup, which is costly on Windows.
-  const [status, recent, last] = await Promise.all([
+  const [status, history] = await Promise.all([
     run(dir, ["status", "--porcelain=v1", "-b", "--untracked-files=all"], timeout),
-    since !== undefined ? run(dir, ["log", `-${MAX_COMMITS}`, `--since=@${Math.floor(since / 1000)}`, format], timeout) : Promise.resolve(null),
-    run(dir, ["log", "-1", format], timeout),
+    snapshotHistory(dir, since, timeout),
   ]);
   if (status === null) return null;
   const lines = status.split("\n").filter(Boolean);
@@ -106,14 +118,12 @@ export async function gitSnapshot(dir: string, since?: number, opts: { timeoutMs
     // Bağlam's own project marker is not work the agent did.
     .filter((p) => !p.startsWith(".baglam/"));
 
-  const lastCommit = last ? parseLog(last)[0] : undefined;
   return {
     branch,
     ahead: tracking ? Number(ahead?.[1] ?? 0) : null,
     behind: tracking ? Number(behind?.[1] ?? 0) : null,
     changed: paths.slice(0, MAX_CHANGED),
     changedCount: paths.length,
-    commitsSince: recent ? parseLog(recent).filter((c) => c.at > (since ?? 0)) : [],
-    ...(lastCommit ? { lastCommit } : {}),
+    ...history,
   };
 }

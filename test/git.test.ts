@@ -54,6 +54,7 @@ describe.skipIf(!hasGit)("git snapshot", () => {
     git(d, "commit", "-q", "-m", "second commit");
     const s = (await gitSnapshot(d, before))!;
     expect(s.commitsSince.map((c) => c.subject)).toContain("second commit");
+    expect(s.lastCommit).toEqual(s.commitsSince[0]);
     const later = (await gitSnapshot(d, Date.now() + 60_000))!;
     expect(later.commitsSince).toEqual([]);
     expect(later.lastCommit?.subject).toBe("second commit");
