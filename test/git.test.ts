@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { currentBranch, gitSnapshot } from "../src/git.js";
+import { branchForRequest, currentBranch, gitSnapshot } from "../src/git.js";
 
 const hasGit = spawnSync("git", ["--version"]).status === 0;
 const tmp = () => mkdtempSync(join(tmpdir(), "baglam-git-"));
@@ -32,6 +32,16 @@ describe.skipIf(!hasGit)("git snapshot", () => {
     const d = tmp();
     git(d, "init", "-q", "-b", "main");
     expect(currentBranch(d)).toBe("main");
+  });
+
+  it("resolves unborn, detached and missing branches asynchronously for MCP", async () => {
+    const d = tmp();
+    expect(await branchForRequest(d)).toBe("-");
+    git(d, "init", "-q", "-b", "topic");
+    expect(await branchForRequest(d)).toBe("topic");
+    const committed = repo();
+    git(committed, "checkout", "--detach");
+    expect(await branchForRequest(committed)).toBe("detached");
   });
 
   it("reports branch and uncommitted files", async () => {

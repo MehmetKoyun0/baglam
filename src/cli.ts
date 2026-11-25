@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { ContextStore, KINDS, type Entry, type Kind, type TrustRule } from "./store.js";
 import { day, formatEntry, formatHandoff, resumePrompt } from "./format.js";
-import { currentBranch, gitSnapshot } from "./git.js";
+import { fastBranch, gitSnapshot } from "./git.js";
 import { resolveDbPath } from "./config.js";
 import { resolveProject } from "./project.js";
 import { VERSION } from "./version.js";
@@ -86,6 +86,8 @@ Environment:
   BAGLAM_USER          name recorded for your approvals (default human:<os user>)
   BAGLAM_FLOOD_LIMIT   pending proposals allowed per agent (default 20)
   BAGLAM_BRIEF_BUDGET  token budget of context_brief (default 2000)
+  BAGLAM_AUTO_CAPTURE   set to 0 to disable automatic saving across projects
+  BAGLAM_HANDOFF_TTL_DAYS  handoff retention in days (default 7)
   BAGLAM_HOOK_INJECT   set to 0 to disable automatic context injection in hooks`;
 
 export interface CliContext {
@@ -380,7 +382,7 @@ Restart these apps so they load the change.${failed ? ` ${failed} tool(s) need a
       }
       case "handoff": {
         const dir = o.project ?? process.cwd();
-        const branch = o.branch ?? currentBranch(dir);
+        const branch = o.branch ?? fastBranch(dir);
         if (args[0] === "clear") {
           print(ctx.store.clearHandoff(project, branch, user) ? `Marked the task on ${branch} as done.` : `No task in progress on ${branch}.`);
           return 0;

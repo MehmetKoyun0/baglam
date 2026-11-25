@@ -36,7 +36,7 @@ cd projem
 baglam init
 ```
 
-`init`, klasöre kalıcı bir proje kimliği verir (`.baglam/project.json`, git'e eklemek iyi olur). Ayrıca `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` ve Cursor kurallarına kısa bir talimat ekler. Böylece ajanlar, sen söylemeden her görevin başında ortak bağlamı okur.
+`init`, klasöre kalıcı bir proje kimliği verir (`.baglam/project.json`, git'e eklemek iyi olur). Ayrıca `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursor/rules/baglam.mdc`, `.github/copilot-instructions.md` ve `.windsurf/rules/baglam.md` dosyalarına, kurulu araçlara göre kısa bir talimat ekler. Böylece ajanlar, sen söylemeden her görevin başında ortak bağlamı okur.
 
 ## Günlük kullanım
 
@@ -143,6 +143,7 @@ Node'u, veritabanını, her aracın bağlantısını (sunucuyu aracın başlatt�
 ## Veriler
 
 - Tek dosya: `~/.baglam/baglam.db` (yerini değiştirmek için `BAGLAM_DB`). Sürüm yükseltmelerinden önce otomatik yedek alınır.
+- Proje ve ajan için `BAGLAM_PROJECT` ve `BAGLAM_AGENT`, inceleyen kişi için `BAGLAM_USER` kullanılır. `BAGLAM_FLOOD_LIMIT` inceleme kotasını, `BAGLAM_BRIEF_BUDGET` özet boyutunu belirler. `BAGLAM_AUTO_CAPTURE=0` otomatik kaydı, `BAGLAM_HOOK_INJECT=0` kancaların bağlam eklemesini kapatır. `BAGLAM_HANDOFF_TTL_DAYS` devir kayıtlarının saklama süresidir (varsayılan 7 gün).
 - `baglam export --format md` okunabilir bir `CONTEXT.md` yazar. `--format json` geçmişiyle birlikte tam yedek alır. `baglam import <dosya>` yedeği geri birleştirir (mevcut kayıtların üzerine asla yazılmaz).
 - Her değişiklik kaydedilir: kim önerdi, kim onayladı, düzenlemeler, kaldırmalar.
 

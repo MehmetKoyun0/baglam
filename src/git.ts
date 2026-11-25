@@ -31,6 +31,14 @@ function run(dir: string, args: string[], timeoutMs: number): Promise<string | n
   });
 }
 
+/** Branch lookup for MCP requests, including detached HEAD and unborn branches. */
+export async function branchForRequest(dir: string): Promise<string> {
+  const name = await run(dir, ["symbolic-ref", "--short", "-q", "HEAD"], 2000);
+  if (name?.trim()) return name.trim();
+  const inside = await run(dir, ["rev-parse", "--is-inside-work-tree"], 2000);
+  return inside?.trim() === "true" ? "detached" : "-";
+}
+
 /** Current branch name; "-" when the folder is not a git work tree (or git is missing). */
 export function currentBranch(dir: string): string {
   const git = (args: string[]) =>

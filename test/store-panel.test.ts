@@ -18,6 +18,15 @@ describe("store: panel support", () => {
   const approved = (project = A, title = "Use pnpm", extra: Record<string, unknown> = {}) =>
     store.addApproved({ project, kind: "convention", title, body: `${title} body`, ...extra }, "human");
 
+  it("logs only actual normalized edits, including when approving an unchanged form", () => {
+    const e = store.propose({ project: A, title: "Record", body: "Body", sourceAgent: "codex", kind: "fact" });
+    const form = { title: " Record ", body: "Body", kind: e.kind, rationale: "", tags: [], audience: ["*"] };
+    expect(store.edit(e.id, form, "owner").editedAt).toBeNull();
+    store.edit(e.id, { ...form, title: "Updated" }, "owner");
+    store.editAndApprove(e.id, { ...form, title: "Updated" }, "owner");
+    expect(store.history(e.id).filter(ev => ev.type === "edited").map(ev => ev.detail)).toEqual(["title"]);
+  });
+
   it("retire hides from agents and logs", () => {
     const e = approved();
     const r = store.retire(e.id, "human", "no longer true");

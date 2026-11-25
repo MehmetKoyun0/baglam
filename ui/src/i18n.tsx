@@ -148,6 +148,8 @@ const en = {
 
   "live.offline": "Connection lost. Retrying…",
   "notify.new": "{n} new proposal(s) to review",
+  "session.expired": "Your panel session has expired. Run baglam ui in a terminal to sign in again.",
+  "setting.unavailable": "Setting unavailable",
   "loading": "Loading…",
   "continue.title": "Continue from here",
   "continue.subtitle": "Work in progress, saved by your agents as they go. Any agent can pick it up.",
@@ -342,6 +344,8 @@ const tr: Record<Key, string> = {
 
   "live.offline": "Bağlantı koptu. Yeniden deneniyor…",
   "notify.new": "Onay bekleyen {n} yeni öneri",
+  "session.expired": "Panel oturumunuz sona erdi. Yeni bir oturum açmak için terminalde baglam ui çalıştırın.",
+  "setting.unavailable": "Ayar okunamadı",
   "loading": "Yükleniyor…",
   "continue.title": "Buradan devam et",
   "continue.subtitle": "Ajanlarının çalışırken kaydettiği yarım işler. Herhangi bir ajan kaldığı yerden sürdürebilir.",
@@ -399,7 +403,7 @@ export type T = (key: Key, vars?: Record<string, string | number>) => string;
 
 export function translator(lang: Lang): T {
   return (key, vars) => {
-    let s = dict[lang][key] ?? dict.en[key] ?? key;
+    let s = dict[lang]?.[key] ?? dict.en[key] ?? key;
     for (const [k, v] of Object.entries(vars ?? {})) s = s.replaceAll(`{${k}}`, String(v));
     return s;
   };

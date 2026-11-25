@@ -4,17 +4,21 @@ import { useI18n } from "../i18n";
 import { useToast } from "../toast";
 
 /** Per-project autonomous mode. Turning it on always asks first; turning it off never needs to. */
-export function AutonomousSwitch(props: { api: Api; projectKey: string; onChanged?: () => void }) {
+export function AutonomousSwitch(props: { api: Api; projectKey: string; refresh?: number; onChanged?: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
   const [on, setOn] = useState<boolean | null>(null);
 
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    props.api
-      .autonomous(props.projectKey)
-      .then(setOn)
-      .catch(() => setOn(false));
-  }, [props.projectKey]);
+    let live = true;
+    setOn(null);
+    setFailed(false);
+    props.api.autonomous(props.projectKey).then((value) => {
+      if (live) setOn(value);
+    }).catch(() => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [props.api, props.projectKey, props.refresh]);
 
   const toggle = () => {
     if (on === null) return;
@@ -42,7 +46,7 @@ export function AutonomousSwitch(props: { api: Api; projectKey: string; onChange
       >
         <span class="knob" />
       </button>
-      <span>{on ? t("auto.on") : t("auto.off")}</span>
+      <span>{failed ? t("setting.unavailable") : on === null ? t("loading") : on ? t("auto.on") : t("auto.off")}</span>
     </div>
   );
 }

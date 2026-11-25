@@ -4,17 +4,21 @@ import { useI18n } from "../i18n";
 import { useToast } from "../toast";
 
 /** Per-project automatic saving from tool hooks. On by default; switching needs no confirmation. */
-export function AutoCaptureSwitch(props: { api: Api; projectKey: string }) {
+export function AutoCaptureSwitch(props: { api: Api; projectKey: string; refresh?: number }) {
   const { t } = useI18n();
   const toast = useToast();
   const [on, setOn] = useState<boolean | null>(null);
 
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    props.api
-      .capture(props.projectKey)
-      .then(setOn)
-      .catch(() => setOn(true));
-  }, [props.projectKey]);
+    let live = true;
+    setOn(null);
+    setFailed(false);
+    props.api.capture(props.projectKey).then((value) => {
+      if (live) setOn(value);
+    }).catch(() => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [props.api, props.projectKey, props.refresh]);
 
   const toggle = () => {
     if (on === null) return;
@@ -37,7 +41,7 @@ export function AutoCaptureSwitch(props: { api: Api; projectKey: string }) {
       >
         <span class="knob" />
       </button>
-      <span>{on ? t("capture.on") : t("capture.off")}</span>
+      <span>{failed ? t("setting.unavailable") : on === null ? t("loading") : on ? t("capture.on") : t("capture.off")}</span>
     </div>
   );
 }

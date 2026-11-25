@@ -36,7 +36,7 @@ cd my-project
 baglam init
 ```
 
-`init` gives the folder a stable project id (`.baglam/project.json`, worth committing) and adds a short instruction block to `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` and Cursor rules, so agents load the shared context at the start of every task without being told.
+`init` gives the folder a stable project id (`.baglam/project.json`, worth committing) and adds a short instruction block to `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursor/rules/baglam.mdc`, `.github/copilot-instructions.md` and `.windsurf/rules/baglam.md` as applicable to the installed tools, so agents load the shared context at the start of every task without being told.
 
 ## Daily use
 
@@ -143,6 +143,7 @@ It checks Node, the database, each tool's registration (and starts the server th
 ## Data
 
 - One file: `~/.baglam/baglam.db` (`BAGLAM_DB` to move it). Upgrades back it up first.
+- Configure the project and agent with `BAGLAM_PROJECT` and `BAGLAM_AGENT`, and the review author with `BAGLAM_USER`. `BAGLAM_FLOOD_LIMIT` controls the review queue and `BAGLAM_BRIEF_BUDGET` the brief size. Set `BAGLAM_AUTO_CAPTURE=0` to disable automatic saving or `BAGLAM_HOOK_INJECT=0` to disable hook context injection. `BAGLAM_HANDOFF_TTL_DAYS` sets handoff retention (default 7 days).
 - `baglam export --format md` writes a readable `CONTEXT.md`; `--format json` writes a full backup with history; `baglam import <file>` merges one back (existing records are never overwritten).
 - Every change is recorded: who proposed, who approved, edits, retirements.
 

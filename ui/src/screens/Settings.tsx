@@ -13,6 +13,7 @@ export function Settings(props: {
   tools: Tool[];
   lang: Lang;
   onLang: (lang: Lang) => void;
+  onChanged?: () => void;
   refresh: number;
 }) {
   const { t } = useI18n();
@@ -53,7 +54,7 @@ export function Settings(props: {
         <h2>{t("capture.title")}</h2>
         <p class="muted">{t("capture.body")}</p>
         {props.project ? (
-          <AutoCaptureSwitch api={props.api} projectKey={props.project} />
+          <AutoCaptureSwitch key={props.project} api={props.api} refresh={props.refresh} projectKey={props.project} />
         ) : (
           <p class="muted small">{t("auto.pickProject")}</p>
         )}
@@ -63,7 +64,7 @@ export function Settings(props: {
         <h2>{t("auto.title")}</h2>
         <p class="muted">{t("auto.body")}</p>
         {props.project ? (
-          <AutonomousSwitch api={props.api} projectKey={props.project} />
+          <AutonomousSwitch onChanged={props.onChanged} key={props.project} api={props.api} refresh={props.refresh} projectKey={props.project} />
         ) : (
           <p class="muted small">{t("auto.pickProject")}</p>
         )}

@@ -17,6 +17,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
   });
+  if (res.status === 401) window.dispatchEvent(new Event("baglam:unauthorized"));
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, (data as { error?: string }).error ?? res.statusText, data as Record<string, unknown>);
   return data as T;
@@ -40,6 +41,7 @@ export interface RecordQuery {
 }
 
 export const api = {
+  ping: () => call("GET", "/api/ping"),
   overview: () => call<Overview>("GET", "/api/overview"),
   projects: (archived = false) => call<{ items: ProjectRow[] }>("GET", `/api/projects${archived ? "?archived=1" : ""}`).then((r) => r.items),
   pending: (project?: string) => call<{ items: PendingEntry[] }>("GET", `/api/pending${qs({ project })}`).then((r) => r.items),

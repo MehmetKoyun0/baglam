@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request } from "node:http";
 import { ContextStore } from "../src/store.js";
-import { startPanel, type Panel } from "../src/ui/server.js";
+import { browserLoginFile } from "../src/ui/launch.js";
+import { LOGIN_LIFETIME, startPanel, type Panel } from "../src/ui/server.js";
 import { testHost } from "./helpers.js";
 
 /** Raw HTTP so tests control Host/Origin/Cookie exactly (fetch forbids setting Host). */
@@ -70,6 +71,33 @@ describe("panel server", () => {
 
   it("binds to 127.0.0.1 and gives a tokenised url", () => {
     expect(panel.url).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${panel.port}/\\?t=[0-9a-f]{48}$`));
+  });
+
+  it("opens a private launcher file without putting the credential in its name", () => {
+    const login = browserLoginFile(panel.url);
+    const path = new URL(login.url);
+    try {
+      expect(path.protocol).toBe("file:");
+      expect(login.url).not.toContain(token());
+      expect(readFileSync(path, "utf8")).toContain(panel.url);
+    } finally { login.remove(); }
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("reserves the token for GET and expires the resulting session", async () => {
+    const path = "/?t=" + token();
+    expect((await http(panel.port, path, { method: "HEAD" })).headers["set-cookie"]).toBeUndefined();
+    const cookie = await login();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 8 * 3600_000 + 1);
+    try {
+      expect((await http(panel.port, "/api/ping", { headers: { cookie } })).status).toBe(401);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("refuses an unused but expired login link", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + LOGIN_LIFETIME + 1);
+    try { expect((await http(panel.port, "/?t=" + token())).status).toBe(403); }
+    finally { clock.mockRestore(); }
   });
 
   it("two panels keep separate sessions (cookies are shared across ports)", async () => {
@@ -202,6 +230,7 @@ describe("panel server", () => {
       const req = request(
         { host: "127.0.0.1", port: panel.port, path: "/api/events", headers: { host: `127.0.0.1:${panel.port}`, cookie } },
         (res) => {
+          expect(res.headers["x-content-type-options"]).toBe("nosniff");
           expect(res.headers["content-type"]).toMatch(/text\/event-stream/);
           res.setEncoding("utf8");
           let buf = "";

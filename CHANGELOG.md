@@ -4,6 +4,18 @@ All notable changes to Bağlam. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-24
+
+### Security
+- Expire panel login links after five minutes and sessions after eight hours. Keep login credentials out of launcher arguments and reserve token redemption for GET requests.
+- Quote hook paths for their shell and delimit unreviewed handoff and Git text in agent context.
+
+### Fixed
+- Recover from invalid panel language preferences, show expired sessions and refresh per-project switches on external changes.
+- Record only actual field changes in edit history.
+- Resolve MCP branch names asynchronously and clean up disconnected panel event streams.
+- Default stable npm releases to latest and align setup, capture and environment documentation with supported behavior.
+
 ## [1.0.1] - 2026-11-24
 
 ### Security

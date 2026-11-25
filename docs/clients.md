@@ -56,7 +56,7 @@ On Windows, write backslashes doubled (`"C:\\Program Files\\nodejs\\node.exe"`).
 
 ## Instructions for agents
 
-`baglam init` adds this block to `CLAUDE.md`, `AGENTS.md` (read by Codex, Cursor and most other agents), `GEMINI.md` (Gemini CLI, Antigravity) and `.cursor/rules/baglam.mdc`. You can also paste it into any rules file your tool reads:
+`baglam init` adds this block to `CLAUDE.md`, `AGENTS.md` (read by Codex, Cursor and most other agents), `GEMINI.md` (Gemini CLI, Antigravity), `.cursor/rules/baglam.mdc`, `.github/copilot-instructions.md` and `.windsurf/rules/baglam.md` according to the installed tools. You can also paste it into any rules file your tool reads:
 
 ```markdown
 ## Shared project context (Bağlam)

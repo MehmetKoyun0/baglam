@@ -45,6 +45,12 @@ describe("hookCommand: one form every shell runs", () => {
 });
 
 describe("hookCommand", () => {
+  it("quotes expansion characters and apostrophes as literal path data", () => {
+    const h = { ...testHost(), platform: "linux" as const, nodePath: "/bin/node", cliPath: "/opt/$team's copy/cli.js" };
+    expect(hookCommand(h, "codex", "edit", "posix")).toContain("'/opt/$team'\\''s copy/hook.js'");
+    expect(hookCommand(h, "codex", "edit", "powershell")).toContain("'/opt/$team''s copy/hook.js'");
+  });
+
   it("quotes absolute forward-slash paths; PowerShell gets the call operator", () => {
     const h = { ...testHost(), nodePath: "C:\\Program Files\\nodejs\\node.exe", cliPath: "C:\\Users\\ev\\BAĞLAM\\dist\\cli.js" };
     expect(hookCommand(h, "claude-code", "prompt", "posix")).toBe('"C:/Program Files/nodejs/node.exe" "C:/Users/ev/BAĞLAM/dist/hook.js" claude-code prompt');

@@ -369,7 +369,9 @@ export class ContextStore {
     // Fields left undefined mean "unchanged", never "clear".
     const given = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as EntryPatch;
     const next = validate({ ...e, rationale: e.rationale ?? undefined, ...given });
-    const changed = Object.keys(given) as (keyof EntryPatch)[];
+    const changed = (Object.keys(given) as (keyof EntryPatch)[]).filter((key) =>
+      next[key] !== (key === "audience" || key === "tags" ? JSON.stringify(e[key]) : e[key])
+    );
     if (!changed.length) return e;
     this.db
       .prepare(`UPDATE entries SET kind=?, title=?, body=?, rationale=?, tags=?, audience=?, edited_at=? WHERE id=?`)

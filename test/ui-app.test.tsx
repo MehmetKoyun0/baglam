@@ -5,6 +5,7 @@ import { dict, historyLabel, pickLanguage, translator, I18nProvider } from "../u
 import { Records } from "../ui/src/screens/Records.js";
 import { EntryCard } from "../ui/src/components/EntryCard.js";
 import { Inbox } from "../ui/src/screens/Inbox.js";
+import { App } from "../ui/src/app.js";
 import { ApiError, type Api } from "../ui/src/api.js";
 import { ToastProvider } from "../ui/src/toast.js";
 import type { Entry, PendingEntry } from "../ui/src/types.js";
@@ -52,6 +53,27 @@ describe("i18n", () => {
     expect(pickLanguage("en-US")).toBe("en");
     expect(pickLanguage("de-DE")).toBe("en");
     expect(pickLanguage(undefined)).toBe("en");
+  });
+});
+
+describe("panel startup", () => {
+  it("falls back to the English dictionary for an unsupported stored language", () => {
+    expect(translator("unknown" as never)("settings.title")).toBe(translator("en")("settings.title"));
+  });
+
+  it("recovers from an invalid language and shows a new-login instruction on 401", async () => {
+    localStorage.setItem("baglam.lang", "invalid");
+    vi.stubGlobal("EventSource", class { addEventListener() {} close() {} });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
+    try {
+      render(<App />);
+      const message = await screen.findByRole("alert");
+      expect(message.textContent).toContain("baglam ui");
+      expect(localStorage.getItem("baglam.lang")).toBe(pickLanguage(navigator.language));
+    } finally {
+      localStorage.clear();
+      vi.unstubAllGlobals();
+    }
   });
 });
 

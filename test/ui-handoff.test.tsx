@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/preact";
+import { act, render, screen, fireEvent, waitFor, cleanup } from "@testing-library/preact";
 import { I18nProvider } from "../ui/src/i18n.js";
 import { ContinueCard } from "../ui/src/components/ContinueCard.js";
 import { ReviewList } from "../ui/src/components/ReviewList.js";
@@ -153,6 +153,26 @@ describe("no repeated request on the card", () => {
     );
     expect(container.textContent).not.toContain("İstenen");
     expect(container.textContent).toContain("Otomatik kaydedildi");
+  });
+});
+
+describe("project setting refresh", () => {
+  it.each(["capture", "autonomous"] as const)("ignores stale %s replies and shows read failures", async (method) => {
+    const read = vi.fn();
+    const stale = Promise.withResolvers<boolean>();
+    read.mockReturnValueOnce(stale.promise).mockResolvedValueOnce(true).mockRejectedValueOnce(new Error("offline"));
+    const api = { [method]: read } as unknown as Api;
+    const Switch = method === "capture" ? AutoCaptureSwitch : AutonomousSwitch;
+    const view = (refresh: number) => <I18nProvider lang="en"><Switch api={api} projectKey="p" refresh={refresh} /></I18nProvider>;
+    const panel = render(view(0));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    panel.rerender(view(1));
+    await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"));
+    await act(async () => { stale.resolve(false); await stale.promise; });
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    panel.rerender(view(2));
+    await screen.findByText("Setting unavailable");
+    expect((screen.getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

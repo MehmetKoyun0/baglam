@@ -35,6 +35,8 @@ export interface Panel {
 }
 
 
+export const LOGIN_LIFETIME = 5 * 60_000;
+const SESSION_LIFETIME = 8 * 60 * 60_000;
 const MAX_STREAMS = 20;
 
 const OPEN_AGAIN = `<!doctype html><meta charset="utf-8"><title>Bağlam</title>
@@ -59,15 +61,23 @@ function cookieValue(req: IncomingMessage, name: string): string | undefined {
 /** Start the review panel on 127.0.0.1. */
 export async function startPanel(o: PanelOptions): Promise<Panel> {
   let token: string | null = randomBytes(24).toString("hex");
-  const sessions = new Set<string>();
+  const loginUntil = Date.now() + LOGIN_LIFETIME;
+  let session: string | null = null;
+  let sessionUntil = 0;
   const listeners = new Set<ServerResponse>();
   let port = 0;
   // Browsers share cookies across ports, so each panel's cookie carries its own port.
   const cookieName = () => `baglam_session_${port}`;
 
-  const notify = () => {
-    for (const res of listeners) res.write(`event: change\ndata: {}\n\n`);
+  const broadcast = (message: string) => {
+    for (const res of listeners) {
+      if (res.destroyed || res.writableEnded || Date.now() >= sessionUntil) {
+        listeners.delete(res);
+        if (!res.destroyed && !res.writableEnded) res.end();
+      } else res.write(message);
+    }
   };
+  const notify = () => broadcast("event: change\ndata: {}\n\n");
   const ctx: PanelContext = { store: o.store, user: o.user, host: o.host, notify };
 
   const routes: Route[] = [
@@ -90,12 +100,12 @@ export async function startPanel(o: PanelOptions): Promise<Panel> {
     }
   }, o.pollMs ?? 1000);
   const heartbeat = setInterval(() => {
-    for (const res of listeners) res.write(`: keep-alive\n\n`);
+    broadcast(": keep-alive\n\n");
   }, 25_000);
 
   const hasSession = (req: IncomingMessage) => {
     const s = cookieValue(req, cookieName());
-    return !!s && [...sessions].some((x) => sameSecret(x, s));
+    return !!s && !!session && Date.now() < sessionUntil && sameSecret(session, s);
   };
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -121,13 +131,15 @@ export async function startPanel(o: PanelOptions): Promise<Panel> {
     // One-time login: the URL printed by `baglam ui` carries a token that becomes a session cookie.
     const t = url.searchParams.get("t");
     if (url.pathname === "/" && t !== null) {
-      if (token && sameSecret(t, token)) {
+      if (req.method === "HEAD") return sendText(res, 204, "");
+      if (req.method !== "GET") return sendText(res, 405, "method not allowed", "text/plain");
+      if (token && Date.now() < loginUntil && sameSecret(t, token)) {
         token = null;
-        const session = randomBytes(32).toString("hex");
-        sessions.add(session);
+        session = randomBytes(32).toString("hex");
+        sessionUntil = Date.now() + SESSION_LIFETIME;
         res.writeHead(302, {
           location: "/",
-          "set-cookie": `${cookieName()}=${session}; HttpOnly; SameSite=Strict; Path=/`,
+          "set-cookie": `${cookieName()}=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_LIFETIME / 1000}`,
           "cache-control": "no-store",
         });
         return void res.end();
@@ -146,8 +158,11 @@ export async function startPanel(o: PanelOptions): Promise<Panel> {
       res.writeHead(200, {
         "content-type": "text/event-stream; charset=utf-8",
         "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
         connection: "keep-alive",
       });
+      res.once("error", () => { listeners.delete(res); res.destroy(); });
+      res.once("close", () => listeners.delete(res));
       res.write(`: connected\n\n`);
       listeners.add(res);
       // Cap open streams: forgotten tabs should not pile up. The oldest stream is closed (its page reconnects).
@@ -156,7 +171,6 @@ export async function startPanel(o: PanelOptions): Promise<Panel> {
         listeners.delete(oldest);
         oldest.end();
       }
-      req.on("close", () => listeners.delete(res));
       return;
     }
 

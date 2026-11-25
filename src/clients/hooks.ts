@@ -41,13 +41,19 @@ function nodeOnPath(h: HostEnv): boolean {
  */
 export function hookCommand(h: HostEnv, client: HookClient, event: HookEvent, shell: Shell): string {
   // posix on forward slashes: the same result for "C:\…\cli.js" and "/usr/…/cli.js" on every OS.
-  const args = `"${posix.join(posix.dirname(slash(h.cliPath)), "hook.js")}" ${client} ${event}`;
+  const quote = (path: string) => {
+    // Keep the existing cross-shell form for ordinary Windows paths.
+    if (!/[$`"\\]/.test(path)) return '"' + path + '"';
+    return "'" + path.replaceAll("'", shell === "powershell" ? "''" : "'\\''") + "'";
+  };
+  const path = (p: string) => win(h) || /^[A-Za-z]:/.test(p) ? slash(p) : p;
+  const args = quote(posix.join(posix.dirname(path(h.cliPath)), "hook.js")) + " " + client + " " + event;
   if (win(h) && nodeOnPath(h)) return `node ${args}`;
-  const line = `"${slash(h.nodePath)}" ${args}`;
+  const line = quote(path(h.nodePath)) + " " + args;
   return shell === "powershell" ? `& ${line}` : line;
 }
 
-const OURS = new RegExp(String.raw`(?:"([^"]*hook\.js)"|(\S*hook\.js))\s+(?:${HOOK_CLIENTS.join("|")})\s+(?:start|prompt|edit|stop)\b`);
+const OURS = new RegExp(String.raw`(?:"([^"]*hook\.js)"|'((?:[^']|''|'\\'')*hook\.js)'|(\S*hook\.js))\s+(?:${HOOK_CLIENTS.join("|")})\s+(?:start|prompt|edit|stop)\b`);
 
 /**
  * Our command shape, and the hook.js it runs is Bağlam's: its package (dist/../package.json) is
@@ -56,7 +62,7 @@ const OURS = new RegExp(String.raw`(?:"([^"]*hook\.js)"|(\S*hook\.js))\s+(?:${HO
 function isOurCommand(command: string): boolean {
   const m = OURS.exec(command);
   if (!m) return false;
-  const file = m[1] ?? m[2];
+  const file = m[1] ?? m[2]?.replaceAll("'\\''", "'").replaceAll("''", "'") ?? m[3];
   if (!existsSync(file)) return true;
   try {
     return (JSON.parse(readFileSync(join(dirname(file), "..", "package.json"), "utf8")) as { name?: unknown }).name === "baglam";

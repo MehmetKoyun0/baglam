@@ -2,11 +2,10 @@
 
 > **Türkçe özet:** Bağlam, yapay zekâ kod ajanlarına (Claude Code, Codex, Cursor, Gemini, Antigravity,
 > VS Code · Copilot, Windsurf) ortak ve insan onaylı bir hafıza ile ajanlar arası devir veren yerel bir
-> MCP sunucusu, CLI ve paneldir. npm'de **1.0.0-rc.6** yayında; canlı gerçeklik denetimi tamamlandı ve denetim sonrası 3 hız/UX düzeltmesi `main`'de (`d22a016`, 513 test, 7/7 CI yeşil). Site Vercel'de canlı. Sıradaki
-> büyük adımlar: arkadaşının Mac'inde test, ardından 1.0.0 sürümü. Canlı denetim ve son durum raporu: [audit-2026-11-21.md](audit-2026-11-21.md). Tasarım işleri için
+> MCP sunucusu, CLI ve paneldir. 1.0.1 npm'de yayında. 1.0.2 için güvenlik ve panel düzeltmeleri hazırlandı.
 > [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) dosyasına bak.
 
-Last updated: 2026-11-21. Read this first when you pick up work on the product (MCP server, CLI, hooks,
+Last updated: 2026-11-24. Read this first when you pick up work on the product (MCP server, CLI, hooks,
 panel logic). Design and website work lives in [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md).
 
 ## Working with the owner
@@ -18,7 +17,7 @@ panel logic). Design and website work lives in [DESIGN-SYSTEM.md](DESIGN-SYSTEM.
   creating accounts or anything outward-facing; pushing `main` deploys the website (see below).
 - No fabricated social proof (no fake users, stars or quotes).
 
-## What exists (1.0.0-rc.6, on npm)
+## What exists (1.0.x)
 
 | Part | Where | What it does |
 |---|---|---|
@@ -54,14 +53,8 @@ cd site && npm run build   # Astro build + site checks (links, EN/TR parity, no 
 
 ## Release and hosting
 
-- npm: package `baglam`, `latest` = `next` = `1.0.0-rc.6` (2026-11-21, CI green at `01cbd66`). How a
-  release goes out: the owner runs `npm login`, `npm publish` (from the repo root; `publishConfig.tag`
-  is `next`) and, once the version shows up, `npm dist-tag add baglam@<version> latest`. Each command
-  asks for browser authentication. npm shows the version as "Validating" for a few minutes; nothing to
-  approve. Give the owner the commands one per block: pasting a second command onto an unfinished line
-  once created a stray `latestnpm` tag (removed with `npm dist-tag rm baglam latestnpm`). Check with
-  `npm view baglam dist-tags` and a clean `npm i -g baglam@latest --prefix <temp>`. Licence MIT, author
-  "Bağlam contributors".
+- npm: the published stable release is `1.0.1`. Stable releases use the default `latest` tag.
+  Use an explicit `--tag next` for prereleases. Verify with `npm view baglam dist-tags` and a clean installation of `baglam@latest`.
 - GitHub: `Mehmet274634/baglam`, branch `main`. Remote URL carries the user name
   (`https://Mehmet274634@github.com/...`) because a cached credential belongs to another account.
 - CI (`.github/workflows/ci.yml`): macOS, Linux, Windows × Node 22/24 plus a site job; the perf step
@@ -85,10 +78,7 @@ cd site && npm run build   # Astro build + site checks (links, EN/TR parity, no 
    list for the tester: [mac-test-checklist.tr.md](mac-test-checklist.tr.md). Watch for: apps opened
    from the Dock (Cursor, VS Code) get launchd's PATH; rc.4+ starts hooks with the absolute Node path
    off Windows, and step 9b checks it. The tester should install rc.6 or newer.
-2. **1.0.0 release** after the Mac test: changelog (promote `[Unreleased]` + Mac fixes), version bump,
-   staged publish (owner approves), GitHub Release tag `v1.0.0`. CI must be fully green first
-   (`d22a016`: all 6 OS×Node jobs and the site job passed, 513 tests).
-3. **Post-1.0.0 roadmap (core first, custom domain deferred until product matures):**
+2. **Post-1.0.0 roadmap (core first, custom domain deferred until product matures):**
    - `1.0.x` panel completeness: `+ Add record`, `Supersede/Replace`, panel export/import, tag/audience editing.
    - `1.1` smart memory: folder/path-scoped records (`paths`), `propose_retire`, `baglam handoff move <branch>`, Turkish token calibration.
    - `1.2` multi-machine & zero-server team sync: `.baglam/shared.json` (`baglam sync`), `baglam status`, Turkish CLI (`BAGLAM_LANG=tr`).

@@ -2,8 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { RootsListChangedNotificationSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { KINDS, type ContextStore } from "./store.js";
-import { FRAMING, briefBudgetFromEnv, formatBrief, formatEntry, formatHandoff } from "./format.js";
-import { currentBranch, gitSnapshot } from "./git.js";
+import { FRAMING, escapeHandoffText, briefBudgetFromEnv, formatBrief, formatEntry, formatHandoff } from "./format.js";
+import { branchForRequest, gitSnapshot } from "./git.js";
 import { floodLimitFromEnv, submitProposal } from "./policy.js";
 import { describeFindings } from "./guards.js";
 import { resolveProjectFor, type Resolution } from "./resolve.js";
@@ -143,7 +143,7 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
     const all = store.listHandoffs(project.key);
     // Most briefs have no task in progress: don't spend a git call on them.
     if (!all.length) return { branch: "-", live: undefined, git: null, otherBranches: [] };
-    const branch = currentBranch(project.dir);
+    const branch = await branchForRequest(project.dir);
     const live = all.find((h) => h.branch === branch);
     const git = live && live.status !== "done" ? await gitSnapshot(project.dir, live.updatedAt) : null;
     return { branch, live, git, otherBranches: all.filter((h) => h.branch !== branch) };
@@ -351,7 +351,7 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
     guard(async ({ project_path, done_add, new_task, ...fields }) => {
       const r = await resolve(project_path);
       if (!r.ok) throw new Error(r.message);
-      const branch = currentBranch(r.project.dir);
+      const branch = await branchForRequest(r.project.dir);
       const h = store.checkpoint({
         ...fields,
         doneAdd: done_add,
@@ -395,13 +395,14 @@ export function createServer(store: ContextStore, opts: ServerOptions): McpServe
           (x) =>
             `- ${new Date(x.updatedAt).toISOString().slice(0, 16).replace("T", " ")} ${x.agent}: ${x.now ?? x.goal}${x.replaced ? " (replaced by a new task)" : ""}`,
         );
-      return [
-        formatHandoff({ live: h, git: work.git, otherBranches: [] }, 20_000),
+      const details = [
         h.done.length ? `All done steps:\n${h.done.map((d) => `- ${d}`).join("\n")}` : "",
         history.length ? `Recent checkpoints:\n${history.join("\n")}` : "",
       ]
         .filter(Boolean)
         .join("\n\n");
+      const summary = formatHandoff({ live: h, git: work.git, otherBranches: [] }, 20_000);
+      return details ? summary + "\n\n<unreviewed_history>\n" + escapeHandoffText(details) + "\n</unreviewed_history>" : summary;
     }),
   );
 

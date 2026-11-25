@@ -44,11 +44,15 @@ const ICONS: Record<Screen, string> = {
 };
 
 export function App() {
-  const [lang, setLang] = useState<Lang>(() => (store.get("baglam.lang") as Lang) || pickLanguage(navigator.language));
+  const [lang, setLang] = useState<Lang>(() => {
+    const saved = store.get("baglam.lang");
+    return saved === "en" || saved === "tr" ? saved : pickLanguage(navigator.language);
+  });
   const [screen, setScreen] = useState<Screen>(screenFromPath);
   const [project, setProject] = useState<string | undefined>(() => store.get("baglam.project") ?? undefined);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [expired, setExpired] = useState(false);
   const [offline, setOffline] = useState(false);
   const lastPending = useRef<number | null>(null);
   const t = translator(lang);
@@ -64,6 +68,12 @@ export function App() {
     const onPop = () => setScreen(screenFromPath());
     addEventListener("popstate", onPop);
     return () => removeEventListener("popstate", onPop);
+  }, []);
+
+  useEffect(() => {
+    const expire = () => setExpired(true);
+    window.addEventListener("baglam:unauthorized", expire);
+    return () => window.removeEventListener("baglam:unauthorized", expire);
   }, []);
 
   useEffect(() => {
@@ -83,12 +93,22 @@ export function App() {
 
   // Live updates: the server pushes "change" whenever anything is written (agents, CLI, other tabs).
   useEffect(() => {
+    if (expired) return;
     const es = new EventSource("/api/events");
     es.addEventListener("change", () => setRefresh((n) => n + 1));
-    es.onopen = () => setOffline(false);
-    es.onerror = () => setOffline(true);
+    let disconnected = false;
+    es.onopen = () => {
+      setOffline(false);
+      if (disconnected) setRefresh((n) => n + 1);
+      disconnected = false;
+    };
+    es.onerror = () => {
+      disconnected = true;
+      setOffline(true);
+      void api.ping().catch(() => {});
+    };
     return () => es.close();
-  }, []);
+  }, [expired]);
 
   const go = (s: Screen) => {
     if (s === screen) return;
@@ -103,6 +123,8 @@ export function App() {
   useEffect(() => {
     document.title = pendingHere ? `(${pendingHere}) Bağlam` : "Bağlam";
   }, [pendingHere]);
+
+  if (expired) return <main><p role="alert">{t("session.expired")}</p></main>;
 
   return (
     <I18nProvider lang={lang}>
@@ -183,6 +205,7 @@ export function App() {
                 tools={overview?.tools ?? []}
                 lang={lang}
                 onLang={setLang}
+                onChanged={changed}
                 refresh={refresh}
               />
             )}
