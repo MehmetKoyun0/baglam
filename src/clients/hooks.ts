@@ -132,7 +132,7 @@ function merge(data: Json, spec: Spec, h: HostEnv): Json {
     const cur = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
     hooks[event] = [...cur, ...list];
   }
-  return { ...(spec.top ?? {}), ...base, hooks };
+  return { ...spec.top, ...base, hooks };
 }
 
 /** Nothing of the user's left (only fields we add ourselves, like "version"). */

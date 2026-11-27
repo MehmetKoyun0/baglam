@@ -23,6 +23,16 @@ afterEach(() => {
 });
 
 describe("auto-capture: requests", () => {
+  it("never leaves a partial redaction marker at a goal boundary", () => {
+    for (let available = 1; available <= "[redacted]".length; available++) {
+      const { cap, live, store } = setup();
+      const prefix = "x".repeat(300 - available - 1);
+      cap("codex", { kind: "prompt", text: prefix + " " + AWS + " follow-up" });
+      expect(live()?.goal).toBe(available === "[redacted]".length ? prefix + " [redacted]" : prefix);
+      store.close();
+    }
+  });
+
   it("prompt starts a task when none is live", () => {
     const { cap, live } = setup();
     cap("claude-code", { kind: "prompt", text: "  Yapılacaklar uygulaması yap\nayrıntı burada" });

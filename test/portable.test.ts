@@ -106,6 +106,20 @@ describe("export / import", () => {
     dst.close();
   });
 
+  it("restores a flagged handoff only with an explicit import override", () => {
+    const data = { format: "baglam/1", entries: [], handoffs: [
+      { project: P, branch: "main", goal: AWS, dir: "/untrusted", force: true },
+    ] };
+    expect(importJson(src, data, { by: "owner" }).failures).toHaveLength(1);
+    expect(src.getHandoff(P, "main")).toBeUndefined();
+    expect(importJson(src, data, { by: "owner", force: true }).handoffs).toBe(1);
+    expect(src.getHandoff(P, "main")).toMatchObject({ goal: AWS, dir: null });
+    data.handoffs[0].goal = "Changed";
+    expect(importJson(src, data, { by: "owner", force: true }).handoffs).toBe(0);
+    expect(src.getHandoff(P, "main")?.goal).toBe(AWS);
+    expect(() => src.checkpoint({ project: P, branch: "other", agent: "codex", goal: AWS })).toThrow(/secret/);
+  });
+
   it("reports record and handoff write failures and exits unsuccessfully", () => {
     const dir = mkdtempSync(join(tmpdir(), "baglam-locked-"));
     const path = join(dir, "store.db");

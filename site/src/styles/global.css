@@ -215,26 +215,6 @@ p code {
   border-bottom: 1px solid rgb(255 255 255 / 6%);
 }
 
-/* Light sections (no longer used; kept for reference) */
-.light {
-  background: var(--light-canvas);
-  color: var(--light-text);
-  --text: var(--light-text);
-  --muted: var(--light-muted);
-  --faint: #656b75;
-  --accent: #5b52f0;
-  --accent-hover: #4a41e0;
-  --border: var(--light-border);
-  --border-strong: #d3d6dd;
-  --raised: var(--light-surface);
-  --surface: var(--light-surface);
-  --highlight: 0 1px 2px rgb(16 24 40 / 6%), 0 8px 24px -12px rgb(16 24 40 / 12%);
-}
-.light .btn-primary {
-  background: var(--light-text);
-  color: #fff;
-}
-
 /* ---------- Cards ---------- */
 @property --ring {
   syntax: "<angle>";
@@ -309,13 +289,6 @@ p code {
   font-size: 15px;
   line-height: 1.6;
 }
-.light .card {
-  background: var(--light-surface);
-}
-.light .card::after {
-  display: none;
-}
-
 .bento {
   display: grid;
   gap: 14px;
@@ -374,7 +347,6 @@ p code {
 .grid-2 > *,
 .grid-3 > *,
 .bento > *,
-.steps > *,
 .page-hero > *,
 .section-head > * {
   min-width: 0;
@@ -577,74 +549,6 @@ p code {
   background: rgb(255 255 255 / 10%);
 }
 
-/* ---------- Steps ---------- */
-.steps {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  counter-reset: step;
-}
-@media (max-width: 860px) {
-  .steps {
-    grid-template-columns: 1fr;
-  }
-}
-.step {
-  counter-increment: step;
-}
-.step .n {
-  font: 600 13px/1 var(--mono);
-  color: var(--accent);
-  margin-bottom: 18px;
-  display: block;
-}
-.step .n::before {
-  content: "0" counter(step);
-}
-.step pre {
-  margin: 18px 0 0;
-  font: 13px/1.6 var(--mono);
-  background: #0b0c0d;
-  color: #e6e7e9;
-  border-radius: 10px;
-  padding: 12px 14px;
-  overflow-x: auto;
-}
-
-/* ---------- Works with ---------- */
-.works {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 10px 34px;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 500;
-}
-.works .lbl {
-  width: 100%;
-  text-align: center;
-  font: 500 11.5px/1 var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-bottom: 8px;
-}
-.works span.tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.works span.tool::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0.5;
-}
-
 /* ---------- List rows (Linear-like features list) ---------- */
 .rows {
   display: grid;
@@ -783,11 +687,11 @@ p code {
   filter: none;
 }
 /* Cards in a row arrive one after another. */
-:is(.bento, .grid-3, .grid-4, .steps, .stats, .os-grid) > .reveal:nth-child(2) { transition-delay: 90ms; }
-:is(.bento, .grid-3, .grid-4, .steps, .stats, .os-grid) > .reveal:nth-child(3) { transition-delay: 180ms; }
-:is(.bento, .grid-3, .grid-4, .steps, .stats, .os-grid) > .reveal:nth-child(4) { transition-delay: 270ms; }
-:is(.bento, .grid-3, .grid-4, .steps, .stats, .os-grid) > .reveal:nth-child(5) { transition-delay: 360ms; }
-:is(.bento, .grid-3, .grid-4, .steps, .stats, .os-grid) > .reveal:nth-child(6) { transition-delay: 450ms; }
+:is(.bento, .grid-3, .grid-4, .stats, .os-grid) > .reveal:nth-child(2) { transition-delay: 90ms; }
+:is(.bento, .grid-3, .grid-4, .stats, .os-grid) > .reveal:nth-child(3) { transition-delay: 180ms; }
+:is(.bento, .grid-3, .grid-4, .stats, .os-grid) > .reveal:nth-child(4) { transition-delay: 270ms; }
+:is(.bento, .grid-3, .grid-4, .stats, .os-grid) > .reveal:nth-child(5) { transition-delay: 360ms; }
+:is(.bento, .grid-3, .grid-4, .stats, .os-grid) > .reveal:nth-child(6) { transition-delay: 450ms; }
 /* Big visuals rise and settle as they scroll through the view, where the browser supports it. */
 @supports (animation-timeline: view()) {
   .rise {

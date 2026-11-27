@@ -8,3 +8,7 @@ dist/
 # Website build
 site/dist/
 site/.astro/
+
+# Local agent workspaces
+/.claude/
+/.superpowers/

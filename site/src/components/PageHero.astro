@@ -2,11 +2,12 @@
 /** Centred page opening with a light effect behind it: eyebrow, two-tone headline, lead, extras. */
 import PageFx, { type Fx } from "./PageFx.astro";
 interface Props { eyebrow?: string; title: string; dim?: string; lead?: string; fx?: Fx }
-const { title, dim, lead, fx = "rays" } = Astro.props;
+const { eyebrow, title, dim, lead, fx = "rays" } = Astro.props;
 ---
 
 <section class="page-hero wrap">
   <PageFx fx={fx} />
+  {eyebrow && <p class="eyebrow">{eyebrow}</p>}
   <h1 class="display two-tone">{title}{dim && <> <span class="dim">{dim}</span></>}</h1>
   {lead && <p class="lead">{lead}</p>}
   <slot />

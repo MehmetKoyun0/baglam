@@ -20,6 +20,11 @@ describe("baglam init", () => {
     dir = mkdtempSync(join(tmpdir(), "baglam-init-"));
   });
 
+  it("creates its temporary project under the suite-owned fixture directory", () => {
+    expect(join(dir, "..")).toBe(tmpdir());
+    expect(tmpdir()).toMatch(/[/\\]baglam-tests-[^/\\]+$/);
+  });
+
   it("creates marker and instruction files", () => {
     const r = runInit(dir, { store, host });
     const marker = JSON.parse(readFileSync(join(dir, ".baglam", "project.json"), "utf8"));

@@ -29,6 +29,7 @@ for (const f of html) {
   if (lang !== want) problems.push(`${url}: <html lang="${lang}">, expected ${want}`);
   if (!/<title>[^<]{10,}<\/title>/.test(s)) problems.push(`${url}: missing title`);
   if (!/<meta name="description" content="[^"]{40,}"/.test(s)) problems.push(`${url}: missing description`);
+  if (!["/", "/tr/"].includes(url) && !/<p\b[^>]*class="eyebrow"[^>]*>[^<]+<\/p>\s*<h1\b/.test(s)) problems.push(`${url}: missing page eyebrow before title`);
   const twin = want === "en" ? `/tr${url}` : url.slice(3);
   if (!exists(twin)) problems.push(`${url}: no ${want === "en" ? "Turkish" : "English"} version at ${twin}`);
   for (const [, attr, value] of s.matchAll(/\s(href|src)="([^"]+)"/g)) {

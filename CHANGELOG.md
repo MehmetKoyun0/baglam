@@ -4,6 +4,13 @@ All notable changes to Bağlam. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-25
+
+### Fixed
+- Use the current language for inbox shortcuts and notifications, and keep rejection drafts with their selected record.
+- Keep redaction markers intact when clipping automatic captures. Explicit forced imports can restore flagged handoffs while preserving live work.
+- Render page headings with their localized eyebrow text, remove unused site styles, and check rendered pages, lint and Astro types in CI. Test runs clean up their temporary fixtures.
+
 ## [1.0.2] - 2026-11-24
 
 ### Security

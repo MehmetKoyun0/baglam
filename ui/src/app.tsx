@@ -56,6 +56,8 @@ export function App() {
   const [offline, setOffline] = useState(false);
   const lastPending = useRef<number | null>(null);
   const t = translator(lang);
+  const currentTranslation = useRef(t);
+  currentTranslation.current = t;
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -84,7 +86,7 @@ export function App() {
         if (project && !o.projects.some((p) => p.key === project)) setProject(undefined);
         const prev = lastPending.current;
         if (prev !== null && o.pendingTotal > prev && document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
-          new Notification("Bağlam", { body: t("notify.new", { n: o.pendingTotal - prev }) });
+          new Notification("Bağlam", { body: currentTranslation.current("notify.new", { n: o.pendingTotal - prev }) });
         }
         lastPending.current = o.pendingTotal;
       })

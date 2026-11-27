@@ -207,11 +207,10 @@ export function importJson(
       result.failures.push({ id: "handoffs[" + index + "]", reason: "invalid handoff fields" });
       continue;
     }
-    if (store.getHandoff(raw.project, raw.branch)) continue; // never replace work in progress here
     const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined);
     const str = (v: unknown) => (typeof v === "string" ? v : undefined);
     try {
-      store.checkpoint({
+      const restored = store.restoreHandoff({
         project: raw.project,
         branch: raw.branch,
         // A folder from a file is not trusted (git runs there): it is set again on the next checkpoint.
@@ -228,8 +227,8 @@ export function importJson(
         request: str(raw.request),
         origin: raw.agentAt === null ? "auto" : undefined,
         newTask: true,
-      });
-      result.handoffs++;
+      }, opts.force === true);
+      if (restored) result.handoffs++;
     } catch (err) {
       result.failures.push({ id: raw.project + "/" + raw.branch, reason: err instanceof Error ? err.message : String(err) });
     }

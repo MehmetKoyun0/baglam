@@ -33,7 +33,7 @@ export const defaultHandshake: Handshake = async (entry) => {
   const transport = new StdioClientTransport({
     command: entry.command,
     args: entry.args,
-    env: { ...(process.env as Record<string, string>), ...(entry.env ?? {}) },
+    env: { ...(process.env as Record<string, string>), ...entry.env },
     stderr: "ignore",
   });
   let timer: NodeJS.Timeout | undefined;

@@ -1,6 +1,6 @@
 {
   "name": "baglam",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Shared, human-approved project memory and seamless handoff for AI coding agents (Claude Code, Codex, Cursor, Antigravity, Gemini CLI, VS Code, Windsurf) over MCP. Local-first.",
   "keywords": [
     "mcp",
@@ -45,6 +45,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && vite build --config ui/vite.config.ts --logLevel warn",
     "test": "vitest run",
+    "lint": "oxlint --deny-warnings src ui/src scripts test",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json",
     "prepack": "npm run build",
     "smoke": "node scripts/pack-smoke.mjs",
@@ -59,6 +60,7 @@
     "@testing-library/preact": "^3.2.6",
     "@types/node": "^26.6.6",
     "jsdom": "^31.0.1",
+    "oxlint": "1.95.0",
     "preact": "^11.2.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",

@@ -126,6 +126,38 @@ describe("Records", () => {
 });
 
 describe("Inbox", () => {
+  it("uses the current language for keyboard approvals after a language change", async () => {
+    const items = [entry()];
+    const api = fakeApi(items);
+    const view = (lang: "en" | "tr") => <I18nProvider lang={lang}><ToastProvider>
+      <Inbox api={api} refresh={0} project={undefined} onChanged={() => {}} />
+    </ToastProvider></I18nProvider>;
+    const panel = render(view("en"));
+    await screen.findByText(items[0].title);
+    panel.rerender(view("tr"));
+    fireEvent.keyDown(window, { key: "a" });
+    await screen.findByText(translator("tr")("toast.approved"));
+  });
+
+  it("discards rejection drafts on cancellation and card changes", async () => {
+    const items = [entry(), entry()];
+    const api = fakeApi(items);
+    render(<I18nProvider lang="en"><Inbox api={api} refresh={0} project={undefined} onChanged={() => {}} /></I18nProvider>);
+    await screen.findByText(items[0].title);
+    fireEvent.keyDown(window, { key: "r" });
+    const reason = () => screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.input(reason(), { target: { value: "first draft" } });
+    fireEvent.keyDown(reason(), { key: "Escape" });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.keyDown(window, { key: "r" });
+    expect(reason().value).toBe("");
+    fireEvent.input(reason(), { target: { value: "belongs to first" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Reject" }).at(-1)!);
+    expect(reason().value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
   it("inbox keyboard: j/k move, a approves the selected card", async () => {
     const items = [entry(), entry(), entry()];
     const api = fakeApi(items);

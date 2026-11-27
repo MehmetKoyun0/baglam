@@ -8,7 +8,7 @@ import { EntryCard } from "../components/EntryCard";
 import { EditForm } from "../components/EditForm";
 import { FlowMark } from "../components/FlowMark";
 
-type Mode = { kind: "idle" } | { kind: "edit"; secrets?: SecretFinding[] } | { kind: "reject" };
+type Mode = { kind: "idle" } | { kind: "edit"; secrets?: SecretFinding[] } | { kind: "reject"; id: string; note: string };
 
 const typingIn = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
@@ -19,7 +19,6 @@ export function Inbox(props: { api: Api; project: string | undefined; refresh: n
   const [items, setItems] = useState<PendingEntry[] | null>(null);
   const [selected, setSelected] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -40,13 +39,16 @@ export function Inbox(props: { api: Api; project: string | undefined; refresh: n
 
   const current = items?.[selected];
 
+  useEffect(() => {
+    if (mode.kind === "reject" && current?.id !== mode.id) setMode({ kind: "idle" });
+  }, [current?.id, mode]);
+
   async function act(fn: () => Promise<unknown>, done: string, id = current?.id) {
     setBusy(true);
     try {
       await fn();
       toast(done);
       setMode({ kind: "idle" });
-      setNote("");
       setItems((list) => list?.filter((e) => e.id !== id) ?? null);
       props.onChanged();
     } catch (err) {
@@ -66,25 +68,26 @@ export function Inbox(props: { api: Api; project: string | undefined; refresh: n
     }
   }
 
-  const reject = () => current && act(() => props.api.reject(current.id, note.trim() || undefined), t("toast.rejected"));
+  const reject = () => current && mode.kind === "reject" && mode.id === current.id && act(() => props.api.reject(current.id, mode.note.trim() || undefined), t("toast.rejected"));
   const saveEdit = (patch: EntryPatch, force: boolean) =>
     current && act(() => props.api.edit(current.id, patch, force ? { approve: true, force: true } : { approve: true }), t("toast.approved"));
 
   // Keys can arrive faster than re-renders, so the handler reads live state from a ref
   // (a stale closure would approve the wrong card).
-  const live = useRef({ items, selected, mode, busy });
-  live.current = { items, selected, mode, busy };
+  const live = useRef({ items, selected, mode, busy, act, t });
+  live.current = { items, selected, mode, busy, act, t };
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       const s = live.current;
-      if (typingIn(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey || s.busy) return;
+      if (ev.metaKey || ev.ctrlKey || ev.altKey || s.busy) return;
       if (s.mode.kind !== "idle") {
         if (ev.key === "Escape") setMode({ kind: "idle" });
         return;
       }
+      if (typingIn(ev.target)) return;
       const list = s.items;
       if (!list?.length) return;
       const move = (to: number) => {
@@ -95,9 +98,9 @@ export function Inbox(props: { api: Api; project: string | undefined; refresh: n
       else if (ev.key === "k" || ev.key === "ArrowUp") move(selectedRef.current - 1);
       else if (ev.key === "a") {
         const target = list[selectedRef.current];
-        if (target) act(() => props.api.approve(target.id, undefined), t("toast.approved"), target.id);
+        if (target) s.act(() => props.api.approve(target.id, undefined), s.t("toast.approved"), target.id);
       } else if (ev.key === "e") setMode({ kind: "edit" });
-      else if (ev.key === "r") setMode({ kind: "reject" });
+      else if (ev.key === "r") setMode({ kind: "reject", id: list[selectedRef.current].id, note: "" });
       else return;
       ev.preventDefault();
     };
@@ -177,7 +180,7 @@ export function Inbox(props: { api: Api; project: string | undefined; refresh: n
                       onSubmit={saveEdit}
                       onCancel={() => setMode({ kind: "idle" })}
                     />
-                  ) : i === selected && mode.kind === "reject" ? (
+                  ) : i === selected && mode.kind === "reject" && mode.id === e.id ? (
                     <form
                       class="reject"
                       onClick={(ev) => ev.stopPropagation()}
@@ -188,7 +191,7 @@ export function Inbox(props: { api: Api; project: string | undefined; refresh: n
                     >
                       <label class="field">
                         <span>{t("field.reason")}</span>
-                        <input value={note} autoFocus onInput={(ev) => setNote(ev.currentTarget.value)} />
+                        <input value={mode.note} autoFocus onInput={(ev) => setMode({ ...mode, note: ev.currentTarget.value })} />
                       </label>
                       <div class="actions">
                         <button type="submit" class="btn btn-danger" disabled={busy}>
@@ -224,7 +227,7 @@ export function Inbox(props: { api: Api; project: string | undefined; refresh: n
                         class="btn btn-quiet"
                         onClick={() => {
                           setSelected(i);
-                          setMode({ kind: "reject" });
+                          setMode({ kind: "reject", id: e.id, note: "" });
                         }}
                       >
                         {t("action.reject")}

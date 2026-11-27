@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { backupOnce, serverEntry, writeFileAtomic, type HostEnv } from "../host.js";
 import type { Change, ClientAdapter, ClientStatus, ServerEntryShape, WriteOptions } from "./types.js";
 

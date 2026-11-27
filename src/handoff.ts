@@ -171,7 +171,7 @@ export class HandoffRepo {
   constructor(
     private readonly db: DatabaseSync,
     private readonly clock: () => number,
-    private readonly transaction: (fn: () => void) => void,
+    private readonly transaction: <T>(fn: () => T) => T,
   ) {}
 
   get(project: string, branch: string): Handoff | undefined {
@@ -219,6 +219,15 @@ export class HandoffRepo {
       throw new Error(`Not saved: it looks like a secret (${describeFindings(findings)}). Remove it and checkpoint again.`);
     }
     return i;
+  }
+
+  /** Archive restores may explicitly allow secrets, but never replace a live task. */
+  restore(raw: CheckpointInput, force: boolean): boolean {
+    return this.transaction(() => {
+      if (this.get(raw.project, raw.branch)) return false;
+      this.apply(force ? validateCheckpoint(raw) : this.check(raw), undefined);
+      return true;
+    });
   }
 
   checkpoint(raw: CheckpointInput): Handoff {

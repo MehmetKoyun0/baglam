@@ -21,8 +21,10 @@ function keep(s: string, max: number): string {
   const window = s.slice(0, max + SCAN_MARGIN);
   const { text, redacted } = redactSecrets(window);
   if (!redacted) return s.slice(0, max);
-  // Drop an incomplete trailing "[redacte" if the size cap sliced through the marker itself.
-  const cut = text.slice(0, max).replace(/\[redacted?[^\]]*$/, "").trim();
+  let end = max;
+  const marker = text.lastIndexOf(REDACTED, max - 1);
+  if (marker >= 0 && marker + REDACTED.length > max) end = marker;
+  const cut = text.slice(0, end).trim();
   if (!cut || cut === REDACTED || scanSecrets(cut).length > 0) return HIDDEN;
   return cut;
 }

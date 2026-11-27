@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { chmodSync, existsSync, mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFile, execSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const root = join(import.meta.dirname, "..");

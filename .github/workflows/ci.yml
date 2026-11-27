@@ -24,6 +24,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - name: Speed budget (looser on shared runners; Windows runners are measured locally, their disks are too slow)
@@ -47,6 +48,8 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
       - run: npm ci
+        working-directory: site
+      - run: npm run typecheck
         working-directory: site
       - name: Build and check every page (links, both languages, no third-party requests)
         run: npm run build

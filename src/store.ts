@@ -653,13 +653,25 @@ export class ContextStore {
   }): { items: Entry[]; total: number } {
     const where: string[] = [];
     const params: Record<string, SQLInputValue> = {};
-    if (opts.project) (where.push("e.project = :project"), (params.project = opts.project));
+    if (opts.project) {
+      where.push("e.project = :project");
+      params.project = opts.project;
+    }
     if (opts.status === "active") {
       where.push("e.status = 'approved' AND (e.expires_at IS NULL OR e.expires_at > :now)");
       params.now = this.clock();
-    } else if (opts.status) (where.push("e.status = :status"), (params.status = opts.status));
-    if (opts.kind) (where.push("e.kind = :kind"), (params.kind = opts.kind));
-    if (opts.agent) (where.push("e.source_agent = :agent"), (params.agent = opts.agent));
+    } else if (opts.status) {
+      where.push("e.status = :status");
+      params.status = opts.status;
+    }
+    if (opts.kind) {
+      where.push("e.kind = :kind");
+      params.kind = opts.kind;
+    }
+    if (opts.agent) {
+      where.push("e.source_agent = :agent");
+      params.agent = opts.agent;
+    }
     const match = opts.text ? toFtsQuery(opts.text) : null;
     if (match) {
       where.push("e.rowid IN (SELECT rowid FROM entries_fts WHERE entries_fts MATCH :match)");
@@ -782,6 +794,10 @@ export class ContextStore {
   // ---- Handoffs (work in progress) ----
 
   private readonly handoffs: HandoffRepo;
+
+  restoreHandoff(i: CheckpointInput, force: boolean): boolean {
+    return this.handoffs.restore(i, force);
+  }
 
   checkpoint(i: CheckpointInput): Handoff {
     return this.handoffs.checkpoint(i);
