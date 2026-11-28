@@ -112,6 +112,48 @@ describe("baglam CLI", () => {
     expect(store.get(b.id)?.decidedBy).toBe("ev");
   });
 
+  it.each(["missing", "already decided", "duplicate"])("rolls back the entire approval batch for a %s ID", (failure) => {
+    const previous = propose("previous");
+    store.approve(previous.id, "owner");
+    const replacement = store.propose({ project: P, kind: "fact", title: "replacement", body: "b", sourceAgent: "codex", supersedes: previous.id });
+    const originalHistory = store.history(previous.id);
+    const proposalHistory = store.history(replacement.id);
+    const invalid = failure === "missing" ? "unknown-id" : failure === "duplicate" ? replacement.id : previous.id;
+    expect(run("approve", replacement.id, invalid, "--note", "batch decision")).toBe(1);
+    expect(out.some((line) => line.startsWith("approved "))).toBe(false);
+    expect(store.get(previous.id)?.status).toBe("approved");
+    expect(store.get(replacement.id)?.status).toBe("proposed");
+    expect(store.history(previous.id)).toEqual(originalHistory);
+    expect(store.history(replacement.id)).toEqual(proposalHistory);
+  });
+
+  it("approves proposals across projects with the same decision note", () => {
+    const local = propose();
+    const other = store.propose({ project: "c:/x", kind: "fact", title: "other", body: "b", sourceAgent: "a" });
+    expect(run("approve", "--all", "--all-projects", "--note", "batch decision")).toBe(0);
+    for (const { id } of [local, other]) {
+      expect(store.get(id)).toMatchObject({ status: "approved", decisionNote: "batch decision" });
+    }
+  });
+
+  it("reviews and keeps the current project by default and every project on request", () => {
+    const local = propose();
+    const other = store.propose({ project: "c:/x", kind: "fact", title: "other", body: "b", sourceAgent: "a" });
+    for (const { id } of [local, other]) store.approve(id, "auto", undefined, { auto: true, review: true });
+    expect(run("review")).toBe(0);
+    expect(out.join("\n")).toContain(local.id);
+    expect(out.join("\n")).not.toContain(other.id);
+    expect(run("review", "--all-projects")).toBe(0);
+    for (const entry of [local, other]) {
+      expect(out.join("\n")).toContain(entry.id);
+      expect(out.join("\n")).toContain(`project ${entry.project}`);
+    }
+    expect(run("keep", "--all")).toBe(0);
+    expect(store.unreviewed().map((e) => e.id)).toEqual([other.id]);
+    expect(run("keep", "--all", "--all-projects")).toBe(0);
+    expect(store.unreviewed()).toEqual([]);
+  });
+
   it("approve --all only touches the current project", () => {
     propose();
     const other = store.propose({ project: "c:/x", kind: "fact", title: "t", body: "b", sourceAgent: "a" });

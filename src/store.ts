@@ -278,16 +278,16 @@ export class ContextStore {
     });
   }
 
-  /** Approve the listed proposals that are still pending, all in one transaction; others are skipped. */
-  approveMany(ids: string[], by: string): { approved: string[]; skipped: string[] } {
+  /** Approve in one transaction. Strict callers require every listed proposal to be pending. */
+  approveMany(ids: string[], by: string, opts: { strict?: boolean; note?: string } = {}): { approved: string[]; skipped: string[] } {
     const approved: string[] = [];
     const skipped: string[] = [];
     const now = this.clock();
     this.transaction(() => {
       for (const id of ids) {
-        const e = this.get(id);
+        const e = opts.strict ? this.mustBePending(id) : this.get(id);
         if (e?.status === "proposed") {
-          this.approveRow(e, by, undefined, false, now);
+          this.approveRow(e, by, opts.note, false, now);
           approved.push(id);
         } else skipped.push(id);
       }

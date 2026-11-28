@@ -1,6 +1,6 @@
 {
   "name": "baglam",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Shared, human-approved project memory and seamless handoff for AI coding agents (Claude Code, Codex, Cursor, Antigravity, Gemini CLI, VS Code, Windsurf) over MCP. Local-first.",
   "keywords": [
     "mcp",

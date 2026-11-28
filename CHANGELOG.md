@@ -4,6 +4,12 @@ All notable changes to Bağlam. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-28
+
+### Fixed
+- CLI batch approvals now commit together, including decision notes, replacement status and history.
+- `approve --all`, `review` and `keep --all` now honor `--all-projects`. Their default scope is the selected project.
+
 ## [1.0.3] - 2026-11-25
 
 ### Fixed

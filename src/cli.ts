@@ -44,7 +44,8 @@ Get started:
 
 Review what agents proposed:
   pending [--all-projects]            List proposals waiting for review
-  approve <id...> | --all [--note t]  Approve proposals (they become visible to agents)
+  approve (<id...> | --all [--all-projects]) [--note t]
+                                      Approve the selected proposals together
   reject <id> [--note text]           Reject a proposal
 
 Manage context yourself:
@@ -61,8 +62,8 @@ Continue work across agents:
 
 Autonomous mode (share now, review afterwards):
   auto on [--yes] | auto off | auto status
-  review                              Records shared automatically, waiting for your look
-  keep <id...> | --all                Keep them · undo <id>  Take one back
+  review [--all-projects]             Records shared automatically, waiting for your look
+  keep <id...> | --all [--all-projects]  Keep them · undo <id>  Take one back
 
 Trust (opt-in auto-approval):
   trust add [--agent id] [--kind k] [--global]  Let matching records skip review
@@ -174,6 +175,7 @@ export function runCli(argv: string[], ctx: CliContext): number | Promise<number
   }
   const { values: o, positionals } = parsed;
   const project = o.project ? resolveProject(o.project) : ctx.project;
+  const reviewProject = o["all-projects"] ? undefined : project;
   const [cmd, ...args] = positionals;
   if (o.version && cmd === undefined) {
     print(VERSION);
@@ -183,7 +185,7 @@ export function runCli(argv: string[], ctx: CliContext): number | Promise<number
   try {
     switch (cmd) {
       case "pending": {
-        const items = ctx.store.pending(o["all-projects"] ? undefined : project);
+        const items = ctx.store.pending(reviewProject);
         if (!items.length) {
           print("Nothing waiting for review.");
           return 0;
@@ -197,11 +199,11 @@ export function runCli(argv: string[], ctx: CliContext): number | Promise<number
         return 0;
       }
       case "approve": {
-        const ids = o.all ? ctx.store.pending(project).map((e) => e.id) : args;
+        const ids = o.all ? ctx.store.pending(reviewProject).map((e) => e.id) : args;
         if (!ids.length) throw new Error(o.all ? "nothing pending" : "give at least one id, or --all");
-        for (const id of ids) {
-          const e = ctx.store.approve(id, user, o.note);
-          print(`approved ${e.id}  ${e.title}`);
+        const { approved } = ctx.store.approveMany(ids, user, { strict: true, note: o.note });
+        for (const id of approved) {
+          print(`approved ${id}  ${ctx.store.get(id)?.title ?? ""}`.trimEnd());
         }
         return 0;
       }
@@ -420,20 +422,20 @@ Restart these apps so they load the change.${failed ? ` ${failed} tool(s) need a
         return 0;
       }
       case "review": {
-        const items = ctx.store.unreviewed(project);
+        const items = ctx.store.unreviewed(reviewProject);
         if (!items.length) {
           print("Nothing to review: no records were shared automatically since your last review.");
           return 0;
         }
         for (const e of items) {
-          print(summary(e));
+          print(summary(e) + (o["all-projects"] ? `\n         project ${e.project}` : ""));
           print(`         ${e.body.replace(/\s+/g, " ").slice(0, 160)}`);
         }
         print(`\n${items.length} shared automatically. Keep: baglam keep <id...> | --all  ·  Undo: baglam undo <id>`);
         return 0;
       }
       case "keep": {
-        const ids = o.all ? ctx.store.unreviewed(project).map((e) => e.id) : args;
+        const ids = o.all ? ctx.store.unreviewed(reviewProject).map((e) => e.id) : args;
         if (!ids.length) throw new Error(o.all ? "nothing to review" : "give at least one id, or --all");
         print(`Kept ${ctx.store.keep(ids, user)} record(s).`);
         return 0;
